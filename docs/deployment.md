@@ -47,7 +47,7 @@ Install the resulting wheel in a dedicated environment. For the current package 
 
 ```powershell
 python -m venv .venv
-.venv\Scripts\python.exe -m pip install .\dist\gensprite_mcp-1.1.0-py3-none-any.whl
+.venv\Scripts\python.exe -m pip install .\dist\gensprite_mcp-1.2.0-py3-none-any.whl
 .venv\Scripts\python.exe -m gensprite_mcp --output-dir C:\GenSpriteData
 ```
 
@@ -55,7 +55,7 @@ On Linux or macOS:
 
 ```sh
 python3 -m venv .venv
-.venv/bin/python -m pip install dist/gensprite_mcp-1.1.0-py3-none-any.whl
+.venv/bin/python -m pip install dist/gensprite_mcp-1.2.0-py3-none-any.whl
 .venv/bin/python -m gensprite_mcp --output-dir /absolute/path/to/gensprite-data
 ```
 
@@ -122,3 +122,15 @@ GenSprite's local processing has no server-side credit meter. Client model subsc
 ## Continuous integration
 
 `.github/workflows/ci.yml` installs locked dependencies and runs the same release check on Ubuntu and Windows with Python 3.11 and 3.12. Each successful job builds and uploads its wheel and source distribution. A Windows x64 packaging job also builds and checks the standalone installer. Docker builds, client-specific sampling, and game-engine execution are separate checks.
+
+## Visual review and named delivery (1.2)
+
+`review_asset` accepts a sprite or animation ID and returns a bounded PNG review board directly through MCP plus factual diagnostics. Vision-capable authoring agents should inspect and refine the master before creating motion, then inspect the animation contact sheet and playback where supported. Review hints are not aesthetic guarantees or additional approval gates.
+
+`build_asset_library` publishes an explicit selection of finished master sprites and their animations under `<store>/library`. Catalog labels produce readable names; stable ID suffixes prevent collisions. The returned `index.html` works directly in a local browser with search, native file links, and user-controlled animation previews. It needs no server or external assets. Call this tool at the end of each finished batch; canonical data and intermediate poses are not reorganized automatically.
+
+The library is a managed delivery copy. Repeated publication retains previous entries and preserves native pixels and timing. Modified managed files, invalid indexes, path links, and conflicting destinations cause an actionable error rather than silent replacement. Back up the complete store as before. Reconnect each installed project with the 1.2 Setup executable to use the new tools; existing installations keep their versioned runtime until explicitly updated.
+
+Library publication accepts 1..200 distinct master IDs at a time. Cumulative limits are 1,000 masters, 20,000 managed files, 256 MiB of managed output, and an 8 MiB index. Each master can have up to 200 published animations. Exceeding limits or incomplete bounded animation discovery produces an explicit error. If a server stops during publication, follow its lock-recovery error only after all processes using that store have stopped; preserve user-modified destinations when resolving conflicts.
+
+Publication stages validated payloads and keeps a bounded journal of before/after hashes and backups until the new index commits. Ordinary replacement failures roll back; the next call recovers an interrupted transaction before loading the index. Recovery refuses to replace destination files that no longer match the known old/new content. Canonical assets remain separate throughout. This protects process-level interruptions; it is not a guarantee against hardware or power-loss corruption.

@@ -2,7 +2,7 @@
 
 GenSprite is a local sprite-production toolkit that AI agents use through the **Model Context Protocol (MCP)**. Your AI agent creates the artwork and animation poses. GenSprite turns that artwork into pixel-accurate sprites, refines images, assembles animations, preserves asset history, organizes projects, and exports reusable files for games.
 
-**Current release: 1.1.0, with 63 MCP tools.** The Windows installer connects GenSprite to Codex without requiring a separate Python installation.
+**Current release: 1.2.0, with 65 MCP tools.** The Windows installer connects GenSprite to Codex without requiring a separate Python installation.
 
 GenSprite runs on your computer over **stdio**: Codex starts a local process and communicates through its standard input and output. You do not need a server URL, port, browser dashboard, hosted account, GPU, or image-provider API key for GenSprite. There is no bundled AI image model. Your connected agent supplies pixels, PNGs, or animation frames; clients that support MCP sampling can also ask their model to author artwork through that optional path.
 
@@ -15,6 +15,7 @@ GenSprite processes supplied artwork locally. Your AI client may still use a clo
 - [Install from source](#install-from-source)
 - [Install a Python wheel](#install-a-python-wheel)
 - [Confirm the connection and create your first sprite](#confirm-the-connection-and-create-your-first-sprite)
+- [Review and browse assets](#review-and-browse-assets)
 - [Connect another project](#connect-another-project)
 - [Files, storage, and backups](#files-storage-and-backups)
 - [Update or remove GenSprite](#update-or-remove-gensprite)
@@ -93,7 +94,7 @@ In the **GenSprite - Connect to Codex** window:
 A successful installation reports:
 
 ```text
-Connected. GenSprite is ready with 63 tools.
+Connected. GenSprite is ready with 65 tools.
 ```
 
 Setup copies a verified server executable into your Windows user profile, starts it to check the real MCP connection, and writes the project's Codex configuration after that check succeeds. Existing unrelated settings and comments are preserved. Changed existing configuration is backed up automatically. Setup does not generate sample artwork.
@@ -226,7 +227,7 @@ $pythonExe = Join-Path $runtimeDir '.venv\Scripts\python.exe'
 Replace the wheel path if your release is somewhere else:
 
 ```powershell
-& $pythonExe -m pip install 'C:\GenSprite\dist\gensprite_mcp-1.1.0-py3-none-any.whl'
+& $pythonExe -m pip install 'C:\GenSprite\dist\gensprite_mcp-1.2.0-py3-none-any.whl'
 & $pythonExe -m pip check
 & $pythonExe -m gensprite_mcp --help
 $pythonExe
@@ -250,17 +251,17 @@ These are prompts for your connected AI agent. They do not require a demo webpag
 
 > Use GenSprite to inspect its available tools. Confirm the server is connected, and explain where this project's assets will be stored. Do not create any assets yet.
 
-Version 1.1.0 exposes 63 tools. If the client cannot find them, check the project folder, configuration, and trust state before asking it to generate artwork.
+Version 1.2.0 exposes 65 tools. If the client cannot find them, check the project folder, configuration, and trust state before asking it to generate artwork.
 
 ### 2. Exercise a built-in sprite and animation
 
-> Use only GenSprite tools. Create the native knight template with create_sprite, keep the master unchanged, then generate its supported idle and attack animations with generate_animation. Validate the sprite and both animations, export portable packages, and show me the resulting local file paths and frame timing. Keep all outputs in this project's GenSprite store.
+> Use only GenSprite tools. Create the native knight template with create_sprite, keep the master unchanged, then generate its supported idle and attack animations with generate_animation. Use review_asset to inspect the master and animations, validate them, export portable packages, and publish the knight with build_asset_library. Show me the named files, gallery, and frame timing. Keep all outputs in this project's GenSprite store.
 
 The unchanged native knight has deterministic idle and attack animation plans. This is a quick way to check the complete local generation, animation, validation, and export path without requiring optional client sampling.
 
 ### 3. Create your own artwork
 
-> Use GenSprite to create a 32 by 32 pixel knight with a consistent palette. Author the pixels or import your own generated PNG, then author distinct idle and attack poses on the same canvas and palette. Assemble the poses with explicit frame durations, validate the results, and export the master sprite and animations. Preserve the original master and return the asset IDs and local file paths.
+> Use GenSprite to create a 32 by 32 pixel knight with a consistent palette. Author the pixels or import your own generated PNG, then author distinct idle and attack poses on the same canvas and palette. Review the actual master image before drawing animation poses, refine any issues, then assemble the poses with explicit frame durations. Review the contact sheet and playback where available, validate and export, then label the final master and publish it with build_asset_library. Preserve the original master and return the asset IDs and local file paths.
 
 The connected agent is responsible for the drawing and poses. `create_pixel_art` accepts exact pixel rows and a palette. `generate_game_art` can accept the same drawing. `import_asset` accepts base64 PNG bytes or a PNG data URL; passing a filesystem path as its image argument is not an import.
 
@@ -273,6 +274,47 @@ A completed animation includes numbered PNG frames, a horizontal PNG strip, a GI
 Jobs can return before processing finishes. The agent should poll `check_job_status` until the job completes, fails, or is cancelled before using its output.
 
 Automated validation checks technical properties such as pixels, dimensions, palette, alpha, frame order, and timing. `ready_for_export` means those checks passed. Artistic quality and motion readability remain the authoring agent's responsibility; there is no human approval gate in the server.
+
+## Review and browse assets
+
+Version 1.2 adds two tools: `review_asset` and `build_asset_library`. The default authoring guidance now asks the agent to inspect and refine actual images before delivering them, then publish finished assets in a readable library.
+
+**Visual review:** `review_asset` accepts a sprite or animation ID and returns an actual PNG image through MCP, plus factual observations. Sprite boards show native-size context, an enlarged preview, silhouette, and palette. Animation boards show ordered poses with durations. Bounds, edge contact, isolated pixels, palette usage, and placement changes help the agent find issues. These observations are hints: a detached sword effect or deliberate jump is not automatically a defect. The tool does not redraw pixels or assign an artistic score.
+
+The agent should inspect the returned board, revise the artwork where needed, and review again. A contact sheet shows poses; inspect the GIF separately to judge playback when the client supports it. A client without image inspection should disclose that limitation. The MCP supplies feedback and editing tools; craftsmanship still comes from the authoring agent.
+
+**Readable delivery:** ask the agent to give finished sprites concise names with `update_asset_label`, then call `build_asset_library` with the final master sprite IDs. The tool includes their animations and returns the local gallery path. For example:
+
+> Review and refine the final knight and its animations. Name the master Silver Knight, publish it with build_asset_library, and show me the gallery link and named files. Keep intermediate poses out of the published selection.
+
+Typical output:
+
+```text
+.gensprite/
+  library/
+    index.html
+    index.json
+    silver-knight--<short-id>/
+      sprite.png
+      preview.png
+      asset.json
+      attack--<short-animation-id>/
+        preview.gif
+        spritesheet.png
+        manifest.json
+        000.png
+        ...
+```
+
+Open the returned `index.html` directly in a browser. Search by name, inspect crisp thumbnails, open native files, and choose when to play animation previews. No web server or internet connection is needed for the gallery. Animation frames remain beside their manifest so its original relative paths stay valid.
+
+Publication happens once at the end of a batch when the agent calls the tool, not on every intermediate pose save. Older integrations can call it explicitly. Repeated publication keeps previous library entries; changing a label updates the displayed name while preserving its existing folder path.
+
+Each publication accepts 1 to 200 finished master sprites. A library holds up to 1,000 masters, 20,000 managed files, and 256 MiB, with an index up to 8 MiB. If animation discovery reaches its scan limit, publication reports incomplete discovery instead of silently omitting animations.
+
+The library is a derived delivery copy. Use GenSprite's editing tools to revise the canonical asset, then publish the selected result. Editing a copied file does not update the original. GenSprite refuses to replace modified managed files or conflicting destinations; preserve your changes and resolve the reported conflict before republishing. Publication keeps a bounded transaction journal so a failed or interrupted update can restore its previous state without treating its own partial output as a user edit. Canonical ID folders and existing exports remain available, and no existing asset folder is automatically migrated.
+
+To receive this update in an installed project, run the new `dist\GenSprite-Setup.exe`, reconnect that project, and reopen Codex. Updating the source checkout alone does not replace a previously installed executable.
 
 ## Connect another project
 
@@ -344,6 +386,7 @@ After disconnecting every project that uses them, you can remove unused runtime 
 | A prompt-only generation call reports sampling is unavailable | Ask the agent to supply pixel rows, a base64 PNG, or frame assets explicitly. Sampling support depends on the client. |
 | An animation job has no output yet | Poll `check_job_status`; inspect failure details if it fails. A returned job ID does not mean files are already complete. |
 | A job fails after restarting Codex | Interrupted work is marked failed. Inspect the job and submit new work; do not assume a partial file set is a completed animation. |
+| Library publishing reports an interrupted or busy publication | Wait for any active publish to finish. If the previous server stopped unexpectedly, close all sessions using that store before following the lock-recovery guidance in the error; preserve any reported user-modified files. |
 | A PNG or animation fails validation | Use the returned error to correct canvas, palette, alpha, pose count, or timing. Import limits and explicit pose requirements still apply. |
 | An exported file is not visible in a remote client | Output paths refer to this computer. A remote or cloud-only client needs its own supported way to access local files and stdio tools. |
 
@@ -360,6 +403,7 @@ For source/wheel startup diagnosis, run the exact configured Python with `-m gen
 | Characters and tilesets | Character workflows, directional metadata, native tiles, and agent-authored atlases |
 | UI kits | Concept selection, sheet generation, component extraction, and final PNG/manifest packages |
 | Organization | Projects, collections, labels, metadata, recent assets, and saved private presets |
+| Review and browsing | Agent-visible review boards, factual improvement hints, named library copies, and a local searchable gallery |
 | Delivery | Portable ZIP exports, integrity hashes, engine descriptors/helpers, and explicit project integration |
 
 Export targets include `generic`, `phaser`, `pixijs`, `flame`, `godot`, `unity`, `libgdx`, and `canvas`. Engine-specific output includes resources such as Godot SpriteFrames and TileSet files where applicable. File validation does not execute a game engine or certify the result in every engine version.
@@ -417,7 +461,7 @@ uv build
 
 The release check runs the automated Python suite with warnings treated as errors, Ruff, and a real stdio MCP smoke covering discovery, exact agent pixels, animation frames/timing, validation, and ZIP integrity. Smoke assets use a temporary store that is removed on exit. `uv build` creates the wheel and source archive in `dist`; it does not build the Windows installer.
 
-The latest local application release check passed **198 tests**, Ruff, and the production MCP smoke on Windows with Python 3.12. The standalone server and packaged Setup checks also passed. The [CI workflow](.github/workflows/ci.yml) defines Windows and Ubuntu Python 3.11/3.12 checks plus Windows installer packaging; defining those jobs is separate from having run them on a hosted CI service.
+The latest local application release check passed **242 tests**, Ruff, and the production MCP smoke on Windows with Python 3.12. The standalone server and packaged Setup checks also passed. The [CI workflow](.github/workflows/ci.yml) defines Windows and Ubuntu Python 3.11/3.12 checks plus Windows installer packaging; defining those jobs is separate from having run them on a hosted CI service.
 
 The latest local checks did not run Docker, game engines, every MCP client, or a second Windows machine. Those environments require their own checks when they become deployment targets.
 

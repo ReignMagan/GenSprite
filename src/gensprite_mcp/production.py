@@ -18,6 +18,20 @@ Wait = Annotated[int, Field(strict=True, ge=0, le=30)]
 Count = Annotated[int, Field(strict=True, ge=1, le=16)]
 
 
+ART_DIRECTION = (
+    "Act as a deliberate pixel artist. Establish subject, native size, perspective, light "
+    "direction and a compact palette before drawing. Keep a readable silhouette at actual "
+    "size, connected color clusters, purposeful outlines, and clear material contrast. "
+    "Avoid stray pixels, muddy near-identical colors, and detail that obscures the pose. "
+    "Preserve reference proportions, equipment, colors and facing across revisions. "
+    "For motion, plan anticipation, action/contact and recovery as appropriate; show weight "
+    "shifts and articulated limbs instead of merely translating the entire sprite. Keep "
+    "ground contact and a stable pivot unless the action requires displacement. "
+    "Choose frame durations for deliberate holds and fast actions. Review at native size "
+    "and enlarged, using the actual pixels rather than assuming the prompt was fulfilled."
+)
+
+
 class Production:
     def __init__(self, store: AssetStore, jobs: JobManager):
         self.store, self.jobs = store, jobs
@@ -56,7 +70,7 @@ class Production:
             include_context="none",
             related_request_id=ctx.request_id,
             system_prompt=(
-                "You are the authoring pixel artist. Return only the requested JSON. "
+                ART_DIRECTION + " Return only the requested JSON. "
                 "Construct deliberate native-grid pixels. Use '.' for transparent pixels, "
                 "one ASCII symbol per palette color, and #RRGGBB values. Never request "
                 "credentials, files, shell commands or unrelated context."
@@ -136,7 +150,8 @@ class Production:
                         "Preserve the supplied reference identity if present. Return "
                         '{"rows":["..."],"palette":{"X":"#RRGGBB"}} with every row exactly '
                         f"{width} symbols and exactly {height} rows. "
-                        "No interpolation or antialiasing."
+                        "No interpolation or antialiasing. Leave deliberate canvas margins and "
+                        "make the silhouette readable before adding interior detail."
                     ),
                     reference,
                 )
@@ -249,7 +264,10 @@ class Production:
                     f"Motion: {prompt}. Return exactly {count} native-grid poses as "
                     '{"frames":[{"rows":["..."],"palette":{"X":"#RRGGBB"}}]}. '
                     f"Use ONLY colors {source.palette}. Preserve identity and pivot. "
-                    "Keep feet planted unless motion requires lifting them. No duplicate poses."
+                    "Keep feet planted unless motion requires lifting them. Plan distinct key "
+                    "poses with anticipation, action and recovery where appropriate. Preserve "
+                    "equipment size and anatomy; avoid whole-body sliding or random jitter. "
+                    "No duplicate poses."
                 ),
                 asset_id,
             )
@@ -343,7 +361,10 @@ def register_production_tools(server: FastMCP, store: AssetStore, jobs: JobManag
         """Render agent-designed symbol rows at native resolution. '.' means transparent.
 
         Palette maps single ASCII symbols to #RRGGBB. Exact width/height: 8..256; <=32 colors.
-        Example: eight rows of '........' with one 'X' pixel and palette {'X':'#00FF00'}.
+        Plan a readable silhouette and coherent shading clusters at actual size; avoid
+        isolated placeholder pixels. Use a concise subject name in description. After creating
+        the master, call review_asset and revise its actual pixels before animating. Publish
+        finished assets with build_asset_library so the user receives named files and a gallery.
         Artwork quality belongs to the connected agent; no human approval gate is imposed.
         """
         drawing = PixelDrawing(rows=rows, palette=palette)

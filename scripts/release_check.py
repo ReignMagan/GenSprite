@@ -1,6 +1,7 @@
 """Run the release tests, lint and an isolated real stdio MCP workflow."""
 
 import asyncio
+import base64
 import json
 import subprocess
 import sys
@@ -14,6 +15,8 @@ from mcp.client.stdio import stdio_client
 
 ROOT = Path(__file__).resolve().parents[1]
 REQUIRED_TOOLS = {
+    "review_asset",
+    "build_asset_library",
     "animate_game_art",
     "assign_assets_to_collection",
     "assign_assets_to_project",
@@ -153,6 +156,18 @@ async def smoke(command: list[str] | None = None) -> None:
                     )
                     assert [frame["duration_ms"] for frame in record["frames"]] == [80, 120]
                     assert len([name for name in package.namelist() if name.endswith(".png")]) >= 3
+                for identifier in (frames[0], animation["animation_id"]):
+                    reviewed = await client.call_tool("review_asset", {"asset_id": identifier})
+                    assert not reviewed.isError, reviewed.content
+                    images = [item for item in reviewed.content if item.type == "image"]
+                    assert len(images) == 1 and images[0].mimeType == "image/png"
+                    assert base64.b64decode(images[0].data).startswith(b"\x89PNG\r\n\x1a\n")
+                    assert isinstance(reviewed.structuredContent, dict)
+                library = await call("build_asset_library", {"asset_ids": [frames[0]]})
+                gallery = Path(library["gallery_path"])
+                assert gallery.is_file() and gallery.resolve().is_relative_to(root)
+                assert "Temporary release-check pose" in gallery.read_text(encoding="utf-8")
+                assert Path(library["index_path"]).is_file()
     assert not root.exists(), "Release-check temporary assets were not removed"
 
 
@@ -162,7 +177,7 @@ def main() -> None:
         subprocess.run([sys.executable, "-m", *arguments], cwd=ROOT, check=True, timeout=300)
     print("Running isolated stdio MCP release smoke", flush=True)
     asyncio.run(asyncio.wait_for(smoke(), timeout=90))
-    print("Release checks passed: tests, lint and real stdio artwork/animation/export workflow.")
+    print("Release checks passed: tests, lint, MCP artwork/animation/export/review/library.")
 
 
 if __name__ == "__main__":
