@@ -1,6 +1,6 @@
 # SpriteCook-style workflow compatibility
 
-GenSprite 1.0 is an independent local, agent-authored sprite-production MCP. It implements the following 44 familiar workflow names and adds 19 native drawing, validation, revision, and export tools. The release smoke requires every name below to be registered. Tools carry their actual input schemas through MCP discovery; the table describes local behavior, not byte-for-byte compatibility with SpriteCook's hosted API.
+GenSprite 1.1 is an independent local, agent-authored sprite-production MCP. It implements the following 44 familiar workflow names and adds 19 native drawing, validation, revision, and export tools. The release smoke requires every name below to be registered. Tools carry their actual input schemas through MCP discovery; the table describes local behavior, not byte-for-byte compatibility with SpriteCook's hosted API.
 
 | Workflow | Familiar tools | Local behavior |
 |---|---|---|

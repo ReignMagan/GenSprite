@@ -37,3 +37,30 @@ jobs:
           name: dist-${{ matrix.os }}-py${{ matrix.python-version }}
           path: dist/*
           if-no-files-found: error
+
+  windows-installer:
+    name: Windows x64 installer
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          architecture: x64
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - name: Install locked build dependencies
+        run: uv sync --locked --group build
+      - name: Verify source release
+        run: uv run --locked --group build python scripts/release_check.py
+      - name: Build and verify standalone local setup
+        run: uv run --locked --group build python scripts/build_windows.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: GenSprite-Setup-windows-x64
+          path: |
+            dist/GenSprite-Setup.exe
+            dist/GenSprite-Setup.exe.sha256
+          if-no-files-found: error

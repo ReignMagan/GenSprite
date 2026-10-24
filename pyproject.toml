@@ -4,16 +4,24 @@ build-backend = "hatchling.build"
 
 [project]
 name = "gensprite-mcp"
-version = "1.0.0"
+version = "1.1.0"
 description = "Agent-authored sprite production, animation, refinement and exports over MCP"
 readme = "README.md"
 requires-python = ">=3.11"
-dependencies = ["mcp>=1.20,<2", "Pillow>=12.1,<13", "pydantic>=2.10,<3"]
+dependencies = [
+    "mcp>=1.20,<2",
+    "Pillow>=12.1,<13",
+    "pydantic>=2.10,<3",
+    "tomlkit>=0.13,<1",
+]
 
 [project.scripts]
 gensprite-mcp = "gensprite_mcp.server:main"
 
 [dependency-groups]
+build = [
+    "pyinstaller>=6.22.3,<7",
+]
 dev = ["pytest>=8,<10", "ruff>=0.11,<1"]
 
 [tool.pytest.ini_options]

@@ -1,6 +1,9 @@
 """GenSprite's local stdio MCP boundary."""
 
 import argparse
+import io
+import os
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -151,4 +154,17 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="GenSprite pixel-art MCP server (local stdio)")
     parser.add_argument("--output-dir", type=Path, default=Path("assets"))
     args = parser.parse_args()
-    build_server(args.output_dir).run(transport="stdio")
+    original = sys.stdin, sys.stdout
+    copies = (
+        io.TextIOWrapper(os.fdopen(os.dup(original[0].fileno()), "rb"), encoding="utf-8"),
+        io.TextIOWrapper(os.fdopen(os.dup(original[1].fileno()), "wb"), encoding="utf-8"),
+    )
+    try:
+        # The SDK closes borrowed buffers; give it owned descriptors to keep process stdio valid.
+        sys.stdin, sys.stdout = copies
+        build_server(args.output_dir).run(transport="stdio")
+    finally:
+        sys.stdin, sys.stdout = original
+        for stream in copies:
+            if not stream.closed:
+                stream.close()

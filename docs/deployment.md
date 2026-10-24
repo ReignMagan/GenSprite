@@ -4,6 +4,33 @@ GenSprite runs as a local stdio MCP server on Python 3.11 or newer. An MCP clien
 
 The connected AI agent supplies the artwork as native-grid pixel rows, base64 PNGs, or animation frame asset IDs. Clients that negotiate MCP sampling can ask their authoring model to supply structured artwork. Sampling is optional: use `create_pixel_art`, pass `drawing={rows,palette}` to `generate_game_art`, import a PNG with `import_asset`, and pass `frame_asset_ids` or pixel `frames` to `animate_game_art` when sampling is unavailable. Sampling and any model charges are controlled by the client.
 
+## Windows setup for Codex
+
+The local Windows x64 release includes `GenSprite-Setup.exe`. Open it, choose an existing game project folder, then click **Connect to Codex**. Reopen Codex in that project. Codex's own project-trust prompt and managed policies still apply; setup does not alter trust or tool approval policies.
+
+Python and all server dependencies are bundled. Setup needs no administrator privileges and makes no network calls. The user's connected AI model may still be cloud-based; explicit supplied artwork is processed locally by GenSprite.
+
+The installed runtime is stored at `%LOCALAPPDATA%\GenSprite\versions\<version>-<digest>\GenSpriteMCP.exe`. Project configuration points to that stable installed copy, so the original source checkout or downloaded Setup file is not needed to keep the connected project working. Keep Setup if you want to connect another project later.
+
+Setup writes only the GenSprite transport entry in `<project>\.codex\config.toml`, preserving unrelated settings/comments and existing tool policy. It stores backups of changed configurations under `%LOCALAPPDATA%\GenSprite\backups\<project-identity>`. Assets and history live under `<project>\.gensprite`. Do not point multiple running servers at the same store.
+
+Setup verifies the embedded executable digest, installs an immutable version/digest path, and performs an actual stdio initialization/tool-discovery check using a temporary store. It commits configuration only after that check passes. Invalid/oversized configuration, linked directories, runtime corruption and conflicting edits fail without replacing the existing configuration. A failed connection can leave the verified binary installed; rerun Setup to retry. No demo or sample artwork is retained.
+
+Run Setup again for another project or a new release. Repeated setup with the same release is idempotent. Existing project artwork is retained across runtime updates. Older runtime versions are kept to avoid breaking projects still referencing them.
+
+To disconnect a project, remove its `[mcp_servers.gensprite]` entry from `.codex/config.toml` and reopen Codex. Keep `.gensprite` if you want to preserve assets/history. Remove the per-user installed runtime only after every connected project has stopped using it; no uninstall action deletes game assets automatically.
+
+Build and verify the standalone installer on Windows x64:
+
+```powershell
+uv sync --locked --group build
+uv run --locked --group build python scripts/build_windows.py
+```
+
+The builder packages separate console-server and windowed-setup executables, preserving MCP stdin/stdout. It executes the production sprite/animation/export smoke against the standalone server, then runs the packaged GUI in a hidden self-check. That check covers existing configuration preservation, backups, Unicode/spaced paths, repeated installation, independent project stores and temporary-data cleanup. Only a passing build is copied to `dist\GenSprite-Setup.exe`; `GenSprite-Setup.exe.sha256` records its digest. Generated build intermediates stay under `.tools/windows-build` and are excluded from Python distributions.
+
+The executable is not code-signed. Windows may warn about an unknown publisher. A public signing certificate and public distribution/hosting are future decisions; payload digests alone do not authenticate a publisher.
+
 ## Install a built wheel
 
 Build and verify the release from a checkout using uv:
@@ -20,7 +47,7 @@ Install the resulting wheel in a dedicated environment. For the current package 
 
 ```powershell
 python -m venv .venv
-.venv\Scripts\python.exe -m pip install .\dist\gensprite_mcp-1.0.0-py3-none-any.whl
+.venv\Scripts\python.exe -m pip install .\dist\gensprite_mcp-1.1.0-py3-none-any.whl
 .venv\Scripts\python.exe -m gensprite_mcp --output-dir C:\GenSpriteData
 ```
 
@@ -28,7 +55,7 @@ On Linux or macOS:
 
 ```sh
 python3 -m venv .venv
-.venv/bin/python -m pip install dist/gensprite_mcp-1.0.0-py3-none-any.whl
+.venv/bin/python -m pip install dist/gensprite_mcp-1.1.0-py3-none-any.whl
 .venv/bin/python -m gensprite_mcp --output-dir /absolute/path/to/gensprite-data
 ```
 
@@ -94,4 +121,4 @@ GenSprite's local processing has no server-side credit meter. Client model subsc
 
 ## Continuous integration
 
-`.github/workflows/ci.yml` installs locked dependencies and runs the same release check on Ubuntu and Windows with Python 3.11 and 3.12. Each successful job builds and uploads its wheel and source distribution. Docker builds, client-specific sampling, and game-engine execution are separate from that workflow.
+`.github/workflows/ci.yml` installs locked dependencies and runs the same release check on Ubuntu and Windows with Python 3.11 and 3.12. Each successful job builds and uploads its wheel and source distribution. A Windows x64 packaging job also builds and checks the standalone installer. Docker builds, client-specific sampling, and game-engine execution are separate checks.

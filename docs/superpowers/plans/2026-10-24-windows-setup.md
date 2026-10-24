@@ -35,25 +35,40 @@
 Files: src/gensprite_mcp/installer.py, tests/test_installer.py, pyproject.toml.
 Interfaces: prepare_config(existing: bytes | None, executable: Path, project: Path) -> bytes; check_connection(command: list[str], timeout: float = 60) -> dict; connect_project(project: Path, source: Path, expected_sha256: str, version: str, install_root: Path, progress=None) -> InstallResult.
 
-- [ ] Write failing tests for configuration preservation, backups/idempotency, independent stores, bad TOML, corrupt payload, links, failed connection, and concurrent config changes.
-- [ ] Implement bounded config parsing with tomlkit, immutable version/digest install paths, a real bounded stdio handshake, atomic writes and rollback-safe configuration.
-- [ ] Run focused tests including a real Python-launched MCP; verify failure paths and full accepted paths.
+- [x] Write failing tests for configuration preservation, backups/idempotency, independent stores, bad TOML, corrupt payload, links, failed connection, and concurrent config changes.
+- [x] Implement bounded config parsing with tomlkit, immutable version/digest install paths, a real bounded stdio handshake, atomic writes and rollback-safe configuration.
+- [x] Run focused tests including a real Python-launched MCP; verify failure paths and full accepted paths.
 
 ### Task 2: Project-picker installer and packaged release
 
 Files: src/gensprite_mcp/setup_gui.py, scripts/packaged_server.py, scripts/packaged_setup.py, scripts/build_windows.py, tests/test_setup_gui.py.
 Interfaces: SetupWindow(root, payload, manifest, install_root); main() displays UI; --self-check --report PATH installs into a temporary project and verifies the actual bundled executable/configuration without touching user settings.
 
-- [ ] Write checks for UI construction, manifest validation and headless self-check behavior.
-- [ ] Implement Select project / Connect to Codex / progress / actionable success/error UI and the embedded payload manifest.
-- [ ] Add the PyInstaller builder; package console server and windowed setup without retaining sample outputs.
-- [ ] Build Windows executables and run the packaged installer's self-check and the normal real MCP workflow against its installed server.
+- [x] Write checks for UI construction, manifest validation and headless self-check behavior.
+- [x] Implement Select project / Connect to Codex / progress / actionable success/error UI and the embedded payload manifest.
+- [x] Add the PyInstaller builder; package console server and windowed setup without retaining sample outputs.
+- [x] Build Windows executables and run the packaged installer's self-check and the normal real MCP workflow against its installed server.
 
 ### Task 3: Review, release evidence and documentation
 
 Files: README.md, docs/deployment.md, .github/workflows/ci.yml, scripts/release_check.py if needed.
 
-- [ ] Update Windows install/use instructions and CI artifact build, retaining local-only architecture and trust behavior.
-- [ ] Run all source release checks and build/inspect wheel/source archives.
-- [ ] Request one independent read-only review; fix concrete findings and rerun affected/full checks as warranted.
-- [ ] Rebuild and verify final standalone installer, record results and link the delivered executable.
+- [x] Update Windows install/use instructions and CI artifact build, retaining local-only architecture and trust behavior.
+- [x] Run all source release checks and build/inspect wheel/source archives.
+- [x] Request one independent read-only review; fix concrete findings and rerun affected/full checks as warranted.
+- [x] Rebuild and verify final standalone installer, record results and link the delivered executable.
+
+
+## Completion evidence
+
+- 198 automated source tests passed with warnings treated as errors; Ruff passed; real stdio source production smoke passed.
+- Independent review found one asset-store-file conflict. Both preflight and concurrent-conflict regressions passed after correction; existing data/config are preserved.
+- Reproduced and fixed SDK standard-stream ownership on shutdown; native regression and standalone EOF shutdown check pass.
+- Final console server passed actual sprite creation, frame animation, validation and ZIP export.
+- Final windowed installer self-check passed actual GUI worker execution, existing settings/comments, backup verification, repeated setup, Unicode/spaced paths and independent projects.
+- Copied the exact final installer outside the checkout and ran it with Python environment/search paths removed. Packaged GUI installation and MCP checks passed; temporary data was removed.
+- Final installer is 36.8 MiB; embedded server digest and checksum sidecar match. It contains the reviewed asset-path guard and stream-ownership fix.
+- Version 1.1.0 wheel/source archives contain no tests, demos, retained artwork, tools or caches. The installed wheel matches source and passed the production smoke.
+- The persistent assets directory remains empty. No actual user project config was changed; the user chooses a project when opening Setup.
+- Local-only Windows x64 release. Public signing, internet hosting/publication and testing on a second Windows machine remain outside this completed build.
+- Git remains unchanged on the existing unborn feature branch; no merge, push, upload or publication was requested.

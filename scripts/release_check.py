@@ -66,13 +66,14 @@ REQUIRED_TOOLS = {
 }
 
 
-async def smoke() -> None:
+async def smoke(command: list[str] | None = None) -> None:
     """Verify real tool discovery, native artwork, animation, validation and ZIP output."""
     with tempfile.TemporaryDirectory(prefix="gensprite-release-") as temporary:
         root = Path(temporary).resolve()
+        invocation = command or [sys.executable, "-m", "gensprite_mcp"]
         parameters = StdioServerParameters(
-            command=sys.executable,
-            args=["-m", "gensprite_mcp", "--output-dir", str(root)],
+            command=invocation[0],
+            args=[*invocation[1:], "--output-dir", str(root)],
         )
         async with stdio_client(parameters) as (reader, writer):
             async with ClientSession(reader, writer) as client:
