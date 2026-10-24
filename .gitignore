@@ -1,0 +1,9 @@
+.venv/
+.tools/
+.uv-cache/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+dist/
+assets/

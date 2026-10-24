@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "gensprite": {
+      "command": "C:\\GenSprite\\.venv\\Scripts\\python.exe",
+      "args": ["-m", "gensprite_mcp", "--output-dir", "C:\\GenSprite\\assets"]
+    }
+  }
+}
