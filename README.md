@@ -2,7 +2,7 @@
 
 GenSprite is a local sprite-production MCP for AI agents. The connected agent designs the artwork; GenSprite preserves its native pixels, refines images, assembles animation, tracks revisions, organizes assets, and builds reusable export packages.
 
-Version 1.0 exposes 63 tools, including the 44 SpriteCook-style workflow names in the [compatibility reference](docs/compatibility.md). It runs over stdio without a hosted account, image-provider API key, or human approval gate. Its local contracts are discoverable through MCP; it is an independent implementation with different provider, billing, URL, and parameter semantics.
+Version 1.0 exposes 63 tools. It runs over stdio without a hosted account, image-provider API key, or human approval gate. Its local contracts are discoverable through MCP; it is an independent implementation.
 
 ## Install and connect
 
@@ -93,4 +93,4 @@ Keep the entire output directory when backing up assets, including `catalog.sqli
 
 This runs the automated suite with warnings as errors, Ruff, and a real stdio MCP workflow covering tool discovery, exact agent pixels, frame animation, validation, ZIP integrity, and timing. All smoke assets use a temporary store that is removed on exit. The suite also exercises imports, sampling, revisions, jobs/cancellation, organization, UI kits, tilesets, exports, and safe integration. Demo pages, demo scripts, and retained sample outputs have been removed.
 
-The [CI workflow](.github/workflows/ci.yml) runs the release check on Windows and Ubuntu with Python 3.11/3.12 and builds wheel/source archives. Docker and engine-runtime execution are separate checks. See the [compatibility reference](docs/compatibility.md) for the exact boundary between this local implementation and SpriteCook's hosted service.
+The [CI workflow](.github/workflows/ci.yml) runs the release check on Windows and Ubuntu with Python 3.11/3.12 and builds wheel/source archives. Docker and engine-runtime execution are separate checks. See the [compatibility reference](docs/compatibility.md) for the exact boundary between this local implementation.
