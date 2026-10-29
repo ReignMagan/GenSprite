@@ -4,12 +4,13 @@ GenSprite is a local sprite-production toolkit that AI agents use through the **
 
 **Current release: 1.3.0, with 67 MCP tools.** The Windows installer connects GenSprite to Codex or OpenCode without requiring a separate Python installation.
 
-GenSprite runs on your computer over **stdio**: Codex starts a local process and communicates through its standard input and output. You do not need a server URL, port, browser dashboard, hosted account, GPU, or image-provider API key for GenSprite. There is no bundled AI image model. Your connected agent supplies pixels, PNGs, or animation frames; clients that support MCP sampling can also ask their model to author artwork through that optional path.
+GenSprite runs on your computer over **stdio**: your MCP client starts a local process and communicates through its standard input and output. You do not need a server URL, port, browser dashboard, hosted account, GPU, or image-provider API key for GenSprite. There is no bundled AI image model. Your connected agent supplies pixels, PNGs, or animation frames; clients that support MCP sampling can also ask their model to author artwork through that optional path.
 
 GenSprite processes supplied artwork locally. Your AI client may still use a cloud model and send prompts or reference images to its provider. Installing a local MCP does not make the AI client itself offline.
 
 ## Contents
 
+- [What changed in 1.3.0](#what-changed-in-130)
 - [Choose an installation method](#choose-an-installation-method)
 - [Prepare Soul Knight-inspired pixel art](#prepare-soul-knight-inspired-pixel-art)
 - [Connect OpenCode locally](#connect-opencode-locally)
@@ -25,6 +26,36 @@ GenSprite processes supplied artwork locally. Your AI client may still use a clo
 - [Available workflows and limits](#available-workflows-and-limits)
 - [Build a Windows installer](#build-a-windows-installer)
 - [Developer release checks](#developer-release-checks)
+
+## What changed in 1.3.0
+
+This release adds two tools, bringing the total to **67**, and improves the shared production pipeline:
+
+| Update | What it provides |
+| --- | --- |
+| `sprite_art_brief` | Image prompts and animation guidance for original Soul Knight-inspired dungeon pixel art, with compact silhouettes, dark outlines, coherent lighting, and small palettes |
+| `prepare_sprite` | Converts client-generated PNGs up to 4096px per side into native sprite canvases using nearest-neighbor scaling, explicit alpha and palette controls, and optional border-matte removal |
+| OpenCode local connection | A ready-to-use project configuration and an OpenCode selector in Windows Setup, alongside Codex |
+| Faster processing | Exact RGB palette matching and native sprite validation require less processing; supplied images are saved once and pixel drawings rendered once |
+| Animation preflight | Checks timing, canvas, palette, transparency, and duplicate poses before persisting supplied pose images |
+| Source preservation | Writes imported or prepared source PNGs before committing the asset manifest, so a source-write failure cannot publish a ready asset without its original |
+
+The measured processing improvements on the same 256x256 inputs were:
+
+| Operation | Before | After | Speedup |
+| --- | ---: | ---: | ---: |
+| Exact mapping to a 32-color palette | 1,862.14 ms | 533.38 ms | 3.49x |
+| Native sprite validation | 44.61 ms | 3.67 ms | 12.14x |
+
+These measurements cover local processing; AI image-generation latency depends on your client and provider. See the [benchmark method and command](docs/performance.md).
+
+**Apply the update to an existing installation:**
+
+- **Windows Setup:** stop the project's active MCP client, run the 1.3.0 `GenSprite-Setup.exe`, select Codex or OpenCode, reconnect the project, and reopen that client. Confirm that 67 tools are available.
+- **Source:** stop the server, update the checkout, run `uv sync --locked`, and reopen the client.
+- **Wheel:** stop the server, install the 1.3.0 wheel into the configured environment, and reopen the client.
+
+Back up the project's `.gensprite` store before updating. Existing asset IDs and revision history remain compatible. Updating the source checkout alone does not replace a previously installed Windows executable. Generated installers and Python packages live under the ignored `dist` directory; cloning the repository does not download those build artifacts.
 
 ## Choose an installation method
 
@@ -100,7 +131,7 @@ The installer bundles the server's Python runtime and dependencies. End users do
 
 ### 2. Prepare your game project folder
 
-Create or choose the folder you normally open in Codex, for example:
+Create or choose the folder you normally open in Codex or OpenCode, for example:
 
 ```text
 C:\Games\KnightGame
@@ -141,21 +172,21 @@ A successful installation reports:
 Connected. GenSprite is ready with 67 tools.
 ```
 
-Setup copies a verified server executable into your Windows user profile, starts it to check the real MCP connection, and writes the project's Codex configuration after that check succeeds. Existing unrelated settings and comments are preserved. Changed existing configuration is backed up automatically. Setup does not generate sample artwork.
+Setup copies a verified server executable into your Windows user profile, starts it to check the real MCP connection, and writes the selected client's project configuration after that check succeeds. It preserves unrelated settings and Codex TOML comments, and backs up changed existing configuration. OpenCode automatic edits require strict JSON; commented JSONC requires the manual configuration described above. Setup does not generate sample artwork.
 
 If Setup reports an error, use its message and the [troubleshooting table](#troubleshooting) before retrying. Do not delete your project configuration or asset store to force installation.
 
-### 5. Reopen Codex in the selected project
+### 5. Reopen the selected client in the project
 
-Close and reopen the Codex session for that folder, or reload the client so it rereads MCP configuration. Open the **same project root** you selected in Setup. Accept Codex's project-trust prompt if it appears.
+Close and reopen Codex or OpenCode for that folder, or reload the client so it rereads MCP configuration. Open the **same project root** you selected in Setup. Accept its project-trust prompt if it appears.
 
-Codex reads project configuration from `.codex/config.toml` for trusted projects. Its own trust rules and managed settings still apply. See the [official Codex MCP configuration guide](https://learn.chatgpt.com/docs/extend/mcp).
+Codex reads project configuration from `.codex/config.toml` for trusted projects. Its own trust rules and managed settings still apply. See the [official Codex MCP configuration guide](https://learn.chatgpt.com/docs/extend/mcp). OpenCode reads the project's `opencode.json` or `opencode.jsonc`; run `opencode mcp list` in that folder to check the connection.
 
 GenSprite starts when the client connects to it. You do not need to keep Setup open or manually launch a background server.
 
 ### 6. Confirm it is available
 
-Ask Codex:
+Ask your connected client:
 
 > Check whether the GenSprite MCP server is connected. List its available sprite and animation tools without creating assets.
 
@@ -282,9 +313,9 @@ $pythonExe
 
 ### 3. Configure the client
 
-Copy the real path printed by `$pythonExe`. Follow the source method's project configuration step, replacing `command` with that interpreter path. Keep `args`, `cwd`, and the per-project `.gensprite` path in the same format.
+Copy the real path printed by `$pythonExe`. For Codex, follow the source method's project configuration step, replacing `command` with that interpreter path. Keep `args`, `cwd`, and the per-project `.gensprite` path in the same format. For OpenCode, use the [manual local configuration](docs/deployment.md#opencode-local-connection), replacing the first command-array entry with that interpreter path.
 
-Do not paste `$pythonExe`, `$env:LOCALAPPDATA`, or `%LOCALAPPDATA%` into TOML expecting shell expansion. Use the resolved absolute path. Reopen Codex in the target project and confirm tool discovery.
+Use resolved absolute paths in client configuration. Do not paste PowerShell variables such as `$pythonExe` or `$env:LOCALAPPDATA` into TOML or the command array expecting shell expansion. Reopen the selected client in the target project and confirm tool discovery.
 
 For macOS or Linux, create a dedicated environment with `python3 -m venv <directory>`, install the wheel with that environment's `bin/python -m pip install <wheel>`, and use its absolute `bin/python` path in the client configuration.
 
@@ -306,9 +337,9 @@ The unchanged native knight has deterministic idle and attack animation plans. T
 
 ### 3. Create your own artwork
 
-> Use GenSprite to create a 32 by 32 pixel knight with a consistent palette. Author the pixels or import your own generated PNG, then author distinct idle and attack poses on the same canvas and palette. Review the actual master image before drawing animation poses, refine any issues, then assemble the poses with explicit frame durations. Review the contact sheet and playback where available, validate and export, then label the final master and publish it with build_asset_library. Preserve the original master and return the asset IDs and local file paths.
+> Use sprite_art_brief for an original Soul Knight-inspired knight at 32 by 32 pixels. Generate the master with your image tool and use prepare_sprite for a large PNG, or author native pixels directly. Review the actual master image and refine it, then author distinct idle and attack poses with the same framing, canvas, palette, and foot pivot. Assemble the poses with explicit frame durations. Review the contact sheet and playback where available, validate and export, then label the final master and publish it with build_asset_library. Preserve the original master and return the asset IDs and local file paths.
 
-The connected agent is responsible for the drawing and poses. `create_pixel_art` accepts exact pixel rows and a palette. `generate_game_art` can accept the same drawing. `import_asset` accepts base64 PNG bytes or a PNG data URL; passing a filesystem path as its image argument is not an import.
+The connected agent is responsible for the drawing and poses. `create_pixel_art` accepts exact pixel rows and a palette. `generate_game_art` can accept the same drawing. For an existing native sprite, `import_asset` accepts base64 PNG bytes or a PNG data URL. For a larger AI PNG or an absolute local file path, use `prepare_sprite` and its `image_path` argument; `import_asset` does not accept filesystem paths as image data.
 
 For custom animation, the agent supplies frame asset IDs or explicit pixel frames. A prose prompt alone needs a client that negotiates MCP sampling. If sampling is unavailable, have the agent provide the artwork directly. GenSprite does not download an AI image model or infer arbitrary motion from a still image on its own.
 
@@ -322,7 +353,7 @@ Automated validation checks technical properties such as pixels, dimensions, pal
 
 ## Review and browse assets
 
-Version 1.2 adds two tools: `review_asset` and `build_asset_library`. The default authoring guidance now asks the agent to inspect and refine actual images before delivering them, then publish finished assets in a readable library.
+Use `review_asset` to inspect actual artwork and `build_asset_library` to publish finished assets in a readable library. These tools work with native drawings, imported sprites, and the prepared AI images introduced in 1.3.0.
 
 **Visual review:** `review_asset` accepts a sprite or animation ID and returns an actual PNG image through MCP, plus factual observations. Sprite boards show native-size context, an enlarged preview, silhouette, and palette. Animation boards show ordered poses with durations. Bounds, edge contact, isolated pixels, palette usage, and placement changes help the agent find issues. These observations are hints: a detached sword effect or deliberate jump is not automatically a defect. The tool does not redraw pixels or assign an artistic score.
 
@@ -359,15 +390,15 @@ Each publication accepts 1 to 200 finished master sprites. A library holds up to
 
 The library is a derived delivery copy. Use GenSprite's editing tools to revise the canonical asset, then publish the selected result. Editing a copied file does not update the original. GenSprite refuses to replace modified managed files or conflicting destinations; preserve your changes and resolve the reported conflict before republishing. Publication keeps a bounded transaction journal so a failed or interrupted update can restore its previous state without treating its own partial output as a user edit. Canonical ID folders and existing exports remain available, and no existing asset folder is automatically migrated.
 
-To receive this update in an installed project, run the new `dist\GenSprite-Setup.exe`, reconnect that project, and reopen Codex. Updating the source checkout alone does not replace a previously installed executable.
+To receive this update in an installed Windows project, run the new `dist\GenSprite-Setup.exe`, select its client, reconnect the project, and reopen Codex or OpenCode. Updating the source checkout alone does not replace a previously installed executable.
 
 ## Connect another project
 
 For a Setup installation, run the same `GenSprite-Setup.exe` again, select the client and other project's root, and click **Connect project**. Reopen the selected client in that project.
 
-Each connected project gets its own `.codex/config.toml` entry and `.gensprite` store. The installed runtime can be shared; assets and history are separate. Repeating Setup for the same project and release is safe and does not reset existing artwork.
+Each connected project gets its own client configuration (`.codex/config.toml` for Codex or `opencode.json`/`opencode.jsonc` for OpenCode) and `.gensprite` store. The installed runtime can be shared; assets and history are separate. Repeating Setup for the same project and release is safe and does not reset existing artwork.
 
-For a source or wheel installation, repeat the manual TOML configuration in the second project. Reuse the same absolute Python executable, but change `cwd` and `--output-dir` to the second project's paths.
+For a source or wheel installation, repeat that client's manual configuration in the second project. Reuse the same absolute Python executable and use a separate `--output-dir` for the second project; update `cwd` too when configuring Codex.
 
 Run **one GenSprite server process per asset store**. Avoid opening multiple client sessions that start separate GenSprite processes against the same project's `.gensprite` directory at once.
 
@@ -377,9 +408,9 @@ Your game source files and GenSprite's asset store are separate. GenSprite keeps
 
 For a complete backup:
 
-1. Stop the Codex session using that store so the server is no longer writing.
+1. Stop the Codex or OpenCode session using that store so the server is no longer writing.
 2. Copy the **entire `.gensprite` directory**, including `catalog.sqlite3` and all subfolders.
-3. Keep the project's `.codex/config.toml` separately if you want to preserve its connection settings.
+3. Keep the project's client configuration separately: `.codex/config.toml` or the existing `opencode.json`/`opencode.jsonc`.
 4. To restore, stop the server first and restore the complete store to the configured path.
 
 Copying only exported PNGs preserves those images but loses revision history, job records, and organization data. Configuration backups created by Setup are not backups of your artwork.
@@ -394,9 +425,9 @@ In the GenSprite source checkout, `.tools\python` may back the active virtual en
 
 1. Back up the project's `.gensprite` store.
 2. Obtain the new trusted Setup executable.
-3. Close the project's active Codex session.
-4. Run Setup, select the project, and connect it again.
-5. Reopen Codex and confirm the connection.
+3. Close the project's active MCP client.
+4. Run Setup, select Codex or OpenCode and the project, then connect it again.
+5. Reopen the selected client and confirm the connection.
 
 Setup installs a versioned runtime and updates that project's configuration. It keeps older runtime versions because other projects may still reference them. Repeat the connection step for each project you want to update. There is no automatic updater.
 
@@ -404,10 +435,10 @@ For source installations, stop the server, update the source, run `uv sync --loc
 
 ### Disconnect a project
 
-1. Close its Codex session.
-2. Open `<project>\.codex\config.toml`.
-3. Remove the `[mcp_servers.gensprite]` table and any nested tables belonging to it, preserving other settings.
-4. Reopen Codex.
+1. Close the project's active MCP client.
+2. Open its existing client configuration.
+3. For Codex, remove the `[mcp_servers.gensprite]` table and any nested tables belonging to it. For OpenCode v1, remove only `mcp.gensprite`; for v2, remove only `mcp.servers.gensprite`. Preserve unrelated settings and JSONC comments.
+4. Reopen the client.
 
 Keep `.gensprite` to preserve artwork and history. Delete it only when you intentionally want to delete that project's stored assets.
 
@@ -422,17 +453,18 @@ After disconnecting every project that uses them, you can remove unused runtime 
 | `GenSprite-Setup.exe` is missing | A source checkout may not include built releases. Use source installation or build Setup from the full checkout. |
 | Setup reports an invalid project path | Choose an existing writable project root. Drive roots, symlinks, junctions, and other reparse-point paths are rejected. |
 | Setup cannot write `.gensprite` | Check permissions. A regular file named `.gensprite` conflicts with the required directory; preserve or rename that file before retrying. |
-| Setup cannot parse existing configuration | Fix the TOML error in `.codex/config.toml`. Do not add duplicate `[mcp_servers.gensprite]` tables. Setup refuses malformed or oversized configuration instead of replacing it. |
+| Setup cannot parse existing configuration | Check `.codex/config.toml` for TOML errors or the existing OpenCode file for invalid JSON. Automatic OpenCode edits require strict JSON; use the manual configuration for commented JSONC. Setup refuses malformed or oversized files. |
 | Setup reports a concurrent configuration change | Close another editor or process changing the configuration, review the file, and retry. |
-| Setup succeeds but Codex shows no GenSprite tools | Reopen Codex in the selected project root. Check its trust state, local MCP settings, and any managed restrictions. |
+| Setup succeeds but the client shows no GenSprite tools | Reopen Codex or OpenCode in the selected project root. Check its trust state, local MCP settings, and any managed restrictions. For OpenCode, run `opencode mcp list` from that folder. |
 | The configured executable no longer exists | Reconnect with Setup, or correct the absolute Python path for a source/wheel installation. |
 | `No module named gensprite_mcp` | The configuration points to the wrong Python environment, or the package was removed. Reinstall into that environment and use its absolute interpreter path. |
-| A manually launched server appears to wait forever | A stdio MCP waits for protocol input from its client. Use `--help` for a terminal check; connect through Codex for normal operation. There is no web page to open. |
+| A manually launched server appears to wait forever | A stdio MCP waits for protocol input from its client. Use `--help` for a terminal check; connect through your MCP client for normal operation. There is no web page to open. |
 | A prompt-only generation call reports sampling is unavailable | Ask the agent to supply pixel rows, a base64 PNG, or frame assets explicitly. Sampling support depends on the client. |
 | An animation job has no output yet | Poll `check_job_status`; inspect failure details if it fails. A returned job ID does not mean files are already complete. |
-| A job fails after restarting Codex | Interrupted work is marked failed. Inspect the job and submit new work; do not assume a partial file set is a completed animation. |
+| A job fails after restarting the client | Interrupted work is marked failed. Inspect the job and submit new work; do not assume a partial file set is a completed animation. |
 | Library publishing reports an interrupted or busy publication | Wait for any active publish to finish. If the previous server stopped unexpectedly, close all sessions using that store before following the lock-recovery guidance in the error; preserve any reported user-modified files. |
 | A PNG or animation fails validation | Use the returned error to correct canvas, palette, alpha, pose count, or timing. Import limits and explicit pose requirements still apply. |
+| An AI image exceeds the native import limit or a local path is rejected by `import_asset` | Use `prepare_sprite` with an absolute local `image_path` or base64 `image`. Source PNGs can be up to 4096px per side and 4 MiB; the prepared canvas remains 8..256px. |
 | An exported file is not visible in a remote client | Output paths refer to this computer. A remote or cloud-only client needs its own supported way to access local files and stdio tools. |
 
 For source/wheel startup diagnosis, run the exact configured Python with `-m gensprite_mcp --help`. For MCP discovery, use the client's server status view and error logs. Avoid running a second server against an already active store while investigating.
@@ -441,6 +473,8 @@ For source/wheel startup diagnosis, run the exact configured Python with `-m gen
 
 | Workflow | What GenSprite provides |
 | --- | --- |
+| Art direction | `sprite_art_brief` supplies an image prompt, negative prompt, and consistent pose guidance for the connected AI client |
+| AI-image preparation | `prepare_sprite` fits large PNGs onto a native grid, controls palette/alpha, optionally removes a flat border matte, and preserves original bytes |
 | Sprite authoring and import | Exact rows/palette rendering, native templates, and base64 PNG imports |
 | Refinement and revisions | Image edits, background removal, alpha refinement, immutable derived assets, history, and rollback |
 | Animation | Explicit frame assembly, per-frame timing, manifests, strips, GIF previews, and native knight motion plans |
@@ -461,7 +495,8 @@ Current technical bounds:
 
 - Native canvases: 8 to 256 pixels per side, with 1 to 32 palette colors.
 - Sampling-generated canvases: at most 64 by 64; supply larger artwork explicitly.
-- Imported PNG data: at most 4 MiB, with soft alpha requiring explicit refinement.
+- Native PNG import: 8 to 256 pixels per side and at most 4 MiB; soft alpha requires an explicit cutoff.
+- AI-image preparation: source PNGs from 8 to 4096 pixels per side and at most 4 MiB, fitted to a native 8..256px canvas. Defaults are 2px padding, alpha cutoff 128, and at most 16 colors; supply a locked palette or a color budget of 1..32.
 - Animation: 1 to 16 poses; durations of 10 to 10,000 milliseconds in multiples of 10.
 - Duplicate poses are rejected unless explicitly permitted through the frame-assembly API.
 - Coordinates use a top-left origin with integer rectangles and pivot positions.
@@ -504,9 +539,19 @@ uv run --locked python scripts/release_check.py
 uv build
 ```
 
-The release check runs the automated Python suite with warnings treated as errors, Ruff, and a real stdio MCP smoke covering discovery, exact agent pixels, animation frames/timing, validation, and ZIP integrity. Smoke assets use a temporary store that is removed on exit. `uv build` creates the wheel and source archive in `dist`; it does not build the Windows installer.
+The release check runs the automated Python suite with warnings treated as errors, Ruff, and a real stdio MCP smoke covering discovery, art briefs, large-image preparation, exact agent pixels, animation frames/timing, visual review, library publication, and ZIP integrity. Smoke assets use a temporary store that is removed on exit. `uv build` creates the wheel and source archive in `dist`; it does not build the Windows installer.
 
-The latest local application release check passed **242 tests**, Ruff, and the production MCP smoke on Windows with Python 3.12. The standalone server and packaged Setup checks also passed. The [CI workflow](.github/workflows/ci.yml) defines Windows and Ubuntu Python 3.11/3.12 checks plus Windows installer packaging; defining those jobs is separate from having run them on a hosted CI service.
+The latest local suite collected **283 tests: 282 passed and one GUI test skipped because a graphical display was unavailable**. All four GUI tests passed in a separate run. Ruff, the production MCP smoke, the standalone server workflow, and the packaged Setup self-check passed on Windows with Python 3.12. The packaged check verified 67 tools, Codex and OpenCode configuration, backups, repeated setup, separate stores, and temporary-file cleanup. OpenCode 1.18.31 also reported GenSprite connected through the included project configuration.
+
+The [CI workflow](.github/workflows/ci.yml) defines Windows and Ubuntu Python 3.11/3.12 checks plus Windows installer packaging. Hosted CI results should be checked on GitHub; the local results above describe the completed Windows verification.
+
+To measure current processing performance independently:
+
+```powershell
+uv run --locked python scripts/benchmark_processing.py
+```
+
+The benchmark checks palette tie ordering, transparent-pixel preservation, and sprite validation, then reports timings using temporary assets. See [processing measurements](docs/performance.md) for the recorded baseline comparison.
 
 The latest local checks did not run Docker, game engines, every MCP client, or a second Windows machine. Those environments require their own checks when they become deployment targets.
 
@@ -515,7 +560,10 @@ The latest local checks did not run Docker, game engines, every MCP client, or a
 | `src/gensprite_mcp` | MCP server, asset processing, workflows, exports, and Setup implementation |
 | `scripts/release_check.py` | Automated release verification using temporary assets |
 | `scripts/build_windows.py` | Standalone Windows release builder and package checks |
+| `scripts/benchmark_processing.py` | Repeatable local palette and sprite-validation measurements |
 | `tests` | Automated regression checks retained for releases |
 | `examples/mcp-config.json` | Manual stdio example for clients that use JSON `mcpServers` configuration |
+| `opencode.json` and `examples/opencode-config.json` | Source-checkout OpenCode connection and a manual configuration example for another project |
+| `docs/performance.md` | Benchmark method, measured results, and processing changes |
 | `pyproject.toml` and `uv.lock` | Python package metadata and locked source dependencies |
 | `dist` | Locally built distribution files, when present |
