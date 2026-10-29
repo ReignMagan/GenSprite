@@ -1,8 +1,107 @@
 import hashlib
+import json
 import sys
 import tomllib
 
 import pytest
+
+
+@pytest.mark.parametrize("v2", [False, True])
+def test_opencode_config_preserves_settings_and_connects_locally(tmp_path, v2):
+    from gensprite_mcp.installer import prepare_opencode_config
+
+    other = {"other": {"type": "local", "command": ["other.exe"]}}
+    original = json.dumps({"model": "keep", "mcp": {"servers": other} if v2 else other}).encode()
+    executable = tmp_path / "runtime's folder" / "GenSpriteMCP.exe"
+    updated = prepare_opencode_config(original, executable, tmp_path)
+    document = json.loads(updated)
+    servers = document["mcp"]["servers"] if v2 else document["mcp"]
+    assert document["model"] == "keep"
+    assert servers["other"] == other["other"]
+    server = servers["gensprite"]
+    assert server["type"] == "local"
+    assert server["command"] == [str(executable), "--output-dir", str(tmp_path / ".gensprite")]
+    assert server.get("disabled", False) is False
+    if not v2:
+        assert server["enabled"] is True
+    assert prepare_opencode_config(updated, executable, tmp_path) == updated
+
+
+@pytest.mark.parametrize("named_server", [
+    {"type": "local", "command": ["other.exe"]}, {"enabled": False},
+])
+def test_opencode_v1_server_named_servers_is_preserved_as_a_server(tmp_path, named_server):
+    from gensprite_mcp.installer import prepare_opencode_config
+
+    original = {"mcp": {"servers": named_server}}
+    updated = json.loads(prepare_opencode_config(
+        json.dumps(original).encode(), tmp_path / "server.exe", tmp_path,
+    ))
+    assert updated["mcp"]["servers"] == original["mcp"]["servers"]
+    assert updated["mcp"]["gensprite"]["type"] == "local"
+
+
+def test_opencode_v2_reconnect_preserves_execution_policy(tmp_path):
+    from gensprite_mcp.installer import prepare_opencode_config
+
+    original = {"mcp": {"servers": {"gensprite": {
+        "type": "remote", "url": "https://old.invalid", "codemode": False,
+        "timeout": {"execution": 123000},
+    }}}}
+    updated = json.loads(prepare_opencode_config(
+        json.dumps(original).encode(), tmp_path / "server.exe", tmp_path,
+    ))["mcp"]["servers"]["gensprite"]
+    assert updated["codemode"] is False
+    assert updated["timeout"]["execution"] == 123000
+    assert "url" not in updated
+
+
+@pytest.mark.parametrize("raw", [
+    b'{"mcp": 1}', b'{"mcp":{"gensprite":1}}', b'[]', b'{// keep\n}',
+    b'{"model":"first","model":"second"}', b'{"mcp":{"servers":1}}',
+])
+def test_opencode_config_rejects_invalid_json_without_rewriting(raw, tmp_path):
+    from gensprite_mcp.installer import prepare_opencode_config
+
+    with pytest.raises(ValueError, match="OpenCode|JSON"):
+        prepare_opencode_config(raw, tmp_path / "server.exe", tmp_path)
+
+
+def test_opencode_install_uses_existing_config_and_recoverable_backup(tmp_path, monkeypatch):
+    from gensprite_mcp import installer
+
+    monkeypatch.setattr(installer, "check_connection", lambda command: {"tool_count": 67})
+    payload, digest = source(tmp_path)
+    project = tmp_path / "OpenCode game"
+    project.mkdir()
+    config = project / "opencode.json"
+    original = b'{"model":"keep","mcp":{"other":{"type":"local","command":["other"]}}}'
+    config.write_bytes(original)
+    result = installer.connect_project(
+        project, payload, digest, "1.2.0", tmp_path / "installed", client="opencode",
+    )
+    assert result.config_path == config
+    assert result.backup_path.read_bytes() == original
+    assert not (project / ".codex").exists()
+    assert json.loads(config.read_bytes())["model"] == "keep"
+    assert installer.connect_project(
+        project, payload, digest, "1.2.0", tmp_path / "installed", client="opencode",
+    ).backup_path is None
+
+
+def test_commented_opencode_config_is_never_silently_shadowed_or_rewritten(tmp_path):
+    from gensprite_mcp import installer
+
+    payload, digest = source(tmp_path)
+    config = tmp_path / "opencode.jsonc"
+    raw = b'{ // My settings\n "model": "keep"\n}'
+    config.write_bytes(raw)
+    with pytest.raises(ValueError, match="JSONC|comment"):
+        installer.connect_project(
+            tmp_path, payload, digest, "1.2.0", tmp_path / "installed", client="opencode",
+        )
+    assert config.read_bytes() == raw
+    assert not (tmp_path / "opencode.json").exists()
 
 
 def test_config_preserves_other_settings_comments_and_unicode_paths(tmp_path):

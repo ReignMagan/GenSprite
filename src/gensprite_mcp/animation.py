@@ -84,8 +84,16 @@ def assemble_animation(store: "AssetStore", request: FrameAnimationRequest) -> d
     source = store._manifest(request.asset_id)
     if store.validate_sprite(request.asset_id)["errors"]:
         raise ValueError("Master validation failed")
+    images = _load_frames(store, source, request.frame_asset_ids)
+    return _write_animation(
+        store, source, images, request.durations_ms, request.name, request.loop,
+        "agent_frames", request.frame_asset_ids, request.allow_duplicate_frames,
+    )
+
+
+def _load_frames(store: "AssetStore", source: Manifest, asset_ids: list[str]) -> list[Image.Image]:
     images = []
-    for asset_id in request.frame_asset_ids:
+    for asset_id in asset_ids:
         manifest = store._manifest(asset_id)
         if store.validate_sprite(asset_id)["errors"]:
             raise ValueError(f"Frame source validation failed: {asset_id}")
@@ -93,17 +101,37 @@ def assemble_animation(store: "AssetStore", request: FrameAnimationRequest) -> d
             raise ValueError("All animation frames must use the master canvas")
         with Image.open(store._path("generated", asset_id, "sprite.png")) as image:
             images.append(image.copy())
-    return _write_animation(
-        store,
-        source,
-        images,
-        request.durations_ms,
-        request.name,
-        request.loop,
-        "agent_frames",
-        request.frame_asset_ids,
-        request.allow_duplicate_frames,
+    return images
+
+
+def validate_frames(
+    source: Manifest, images: list[Image.Image], durations: list[int], motion: str,
+    loop: bool, allow_duplicates: bool = False,
+) -> None:
+    """Preflight the whole motion before persisting poses or animation files."""
+    FrameAnimationRequest(
+        asset_id=source.asset_id, frame_asset_ids=[source.asset_id] * len(images),
+        durations_ms=durations, name=motion, loop=loop, allow_duplicate_frames=allow_duplicates,
     )
+    approved = {tuple(bytes.fromhex(color[1:])) for color in source.palette}
+    for image in images:
+        if image.size != (source.canvas.width, source.canvas.height) or image.mode != "RGBA":
+            raise ValueError("Frames must match the native RGBA master canvas")
+        alpha = image.getchannel("A")
+        if not alpha.getbbox():
+            raise ValueError("Frames must contain visible pixels")
+        if source.transparent and alpha.getextrema()[0] != 0:
+            raise ValueError("Frames require a transparent background like the master")
+        if any(
+            a not in (0, 255) or (a and (r, g, b) not in approved)
+            for r, g, b, a in image.get_flattened_data()
+        ):
+            raise ValueError("Frame alpha or palette differs from the master rules")
+    if (
+        not allow_duplicates
+        and len({_visible_pixels(image.tobytes()) for image in images}) != len(images)
+    ):
+        raise ValueError("Motion plan contains duplicate frames; express holds with durations")
 
 
 def _write_animation(
@@ -119,20 +147,7 @@ def _write_animation(
 ) -> dict[str, Any]:
     count = len(images)
     width, height = source.canvas.width, source.canvas.height
-    approved = {tuple(bytes.fromhex(color[1:])) for color in source.palette}
-    for image in images:
-        if image.size != (width, height) or image.mode != "RGBA":
-            raise ValueError("Frames must match the native RGBA master canvas")
-        if any(
-            a not in (0, 255) or (a and (r, g, b) not in approved)
-            for r, g, b, a in image.get_flattened_data()
-        ):
-            raise ValueError("Frame alpha or palette differs from the master rules")
-    if (
-        not allow_duplicates
-        and len({_visible_pixels(image.tobytes()) for image in images}) != count
-    ):
-        raise ValueError("Motion plan contains duplicate frames; express holds with durations")
+    validate_frames(source, images, durations, motion, loop, allow_duplicates)
     animation_id = f"n_{uuid4().hex}"
     manifest_path = store._path("animations", animation_id, "manifest.json")
     manifest_path.parent.mkdir(parents=True, exist_ok=False)

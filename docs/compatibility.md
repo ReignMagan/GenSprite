@@ -1,6 +1,6 @@
 # SpriteCook-style workflow compatibility
 
-GenSprite 1.1 is an independent local, agent-authored sprite-production MCP. It implements the following 44 familiar workflow names and adds 19 native drawing, validation, revision, and export tools. The release smoke requires every name below to be registered. Tools carry their actual input schemas through MCP discovery; the table describes local behavior, not byte-for-byte compatibility with SpriteCook's hosted API.
+GenSprite 1.3 is an independent local, agent-authored sprite-production MCP with 67 tools. It implements the following familiar workflow names plus native drawing, preparation, review, library, validation, revision, and export tools. The release smoke requires the production tools to be registered. Tools carry their actual input schemas through MCP discovery; the table describes local behavior, not byte-for-byte compatibility with SpriteCook's hosted API.
 
 | Workflow | Familiar tools | Local behavior |
 |---|---|---|
@@ -17,6 +17,8 @@ GenSprite 1.1 is an independent local, agent-authored sprite-production MCP. It 
 
 Additional GenSprite tools: `create_project_profile`, `get_project_profile`, `create_sprite`, `inspect_sprite`, `validate_sprite`, `generate_animation`, `validate_animation`, `assemble_animation`, `build_spritesheet`, `preview_animation`, `create_pixel_art`, `edit_sprite`, `refine_sprite`, `get_asset_history`, `rollback_asset`, `export_asset`, `detect_engine`, `integrate_asset`, and `verify_integration`.
 
+Production guidance and delivery tools: `sprite_art_brief`, `prepare_sprite`, `review_asset`, and `build_asset_library`. The brief guides the AI client's image tool toward original Soul Knight-inspired dungeon pixel art. Preparation accepts large client-generated PNGs, then creates native assets; it does not generate images or new animation poses itself.
+
 ## Generation contract
 
 The calling agent authors visual content. It can submit `drawing={rows,palette}` or base64 PNG `image` to `generate_game_art`, and pose IDs or pixel frames to `animate_game_art`. A prose-only call uses optional negotiated MCP client sampling. If unavailable, the server requests explicit artwork rather than returning fabricated art, silently switching providers, or demanding an image API key. For stills, supplied artwork is one variation; multiple variations require independently authored drawings or sampling.
@@ -30,6 +32,7 @@ Reference IDs are preserved and passed to sampling. Explicit artwork is already 
 - No SpriteCook account, proprietary model, private API, subscription, or billing is reproduced. `get_credit_balance` reports `credits: null` with `mode: local_unmetered`. Model use belongs to the MCP client.
 - URLs are local `file:` URIs, not signed hosted downloads. `create_asset_upload` returns an expiring local payload path, not an HTTP PUT endpoint. Direct base64 import is available for clients that cannot write the server filesystem.
 - Native assets are 8..256 pixels per side, 1..32 colors with binary alpha. HD illustration generation is outside this pixel-art contract. Explicit alpha refinement preserves original soft-alpha bytes for later cutoff changes.
+- `prepare_sprite` accepts PNG sources up to 4096px per side and 4 MiB, including absolute local PNG paths. It preserves originals, fits the full frame with nearest-neighbor resampling, thresholds alpha, optionally removes a border matte, and reduces colors without dithering. Native `import_asset` remains exact and rejects larger canvases. Alpha reprocessing of a prepared source reapplies its recorded placement and matte settings before thresholding.
 - Animation output formats are `gif` and `spritesheet`; both are generated along with numbered PNGs and JSON. Animated WebP/video outputs are not implemented. Loop/one-shot intent is in the manifest; GIF previews repeat for inspection.
 - A tileset's 15-piece layout describes cell order. The authoring agent supplies the correct visual connectivity; the server does not infer dual-grid terrain semantics or certify tile-edge seamlessness.
 - UI extraction uses supplied rectangle names, or placeholder labels for alpha components. Semantic UI recognition, color themes, and art direction belong to the agent.

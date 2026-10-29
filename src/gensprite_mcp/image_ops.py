@@ -12,7 +12,7 @@ from PIL import Image, UnidentifiedImageError
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, field_validator
 
 from .assets import AssetStore
-from .models import Color, Manifest, Palette, normalize_palette
+from .models import Canvas, Color, Manifest, Palette, normalize_palette
 
 MAX_PNG_BYTES = 4 * 1024 * 1024
 MAX_BASE64_LENGTH = 4 * ((MAX_PNG_BYTES + 2) // 3)
@@ -80,14 +80,14 @@ def _palette(palette: list[str]) -> list[str]:
     return normalize_palette(_PALETTE.validate_python(palette, strict=True))
 
 
-def _decode_png(raw: bytes) -> Image.Image:
+def _decode_png(raw: bytes, max_dimension: int = 256) -> Image.Image:
     if len(raw) > MAX_PNG_BYTES:
         raise ValueError("PNG exceeds the 4 MiB limit")
     if len(raw) < 33 or raw[:16] != b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR":
         raise ValueError("Input must be a valid PNG")
     width, height = struct.unpack(">II", raw[16:24])
-    if not 8 <= width <= 256 or not 8 <= height <= 256:
-        raise ValueError("PNG canvas dimensions must be between 8 and 256 pixels")
+    if not 8 <= width <= max_dimension or not 8 <= height <= max_dimension:
+        raise ValueError(f"PNG canvas dimensions must be between 8 and {max_dimension} pixels")
     try:
         with Image.open(io.BytesIO(raw)) as image:
             if image.format != "PNG" or getattr(image, "n_frames", 1) != 1:
@@ -100,7 +100,7 @@ def _decode_png(raw: bytes) -> Image.Image:
         raise ValueError(f"Cannot decode valid PNG: {exc}") from exc
 
 
-def _decode_input(image: str) -> tuple[Image.Image, bytes]:
+def _decode_input(image: str, max_dimension: int = 256) -> tuple[Image.Image, bytes]:
     if not isinstance(image, str):
         raise ValueError("image must be base64 PNG text or a data:image/png;base64 URL")
     if image.startswith("data:"):
@@ -116,7 +116,7 @@ def _decode_input(image: str) -> tuple[Image.Image, bytes]:
         raise ValueError(
             "image must contain valid base64 PNG data; remote URLs are unsupported"
         ) from exc
-    return _decode_png(raw), raw
+    return _decode_png(raw, max_dimension), raw
 
 
 def _cutoff(image: Image.Image, alpha_cutoff: int | None) -> Image.Image:
@@ -143,13 +143,24 @@ def _quantize(image: Image.Image, palette: list[str]) -> Image.Image:
             continue
         rgb = (red, green, blue)
         if rgb not in nearest:
-            nearest[rgb] = min(colors, key=lambda color: sum(
-                (a - b) ** 2 for a, b in zip(rgb, color, strict=True)
+            nearest[rgb] = min(colors, key=lambda color: (
+                (red - color[0]) ** 2 + (green - color[1]) ** 2 + (blue - color[2]) ** 2
             ))
         pixels.append((*nearest[rgb], alpha))
     result = Image.new("RGBA", image.size)
     result.putdata(pixels)
     return result
+
+
+def _reduced_palette(image: Image.Image, max_colors: int) -> list[str]:
+    _integer(max_colors, "max_colors", 1, 32)
+    visible = [pixel[:3] for pixel in image.get_flattened_data() if pixel[3]]
+    if not visible:
+        raise ValueError("Color reduction must preserve visible pixels")
+    strip = Image.new("RGB", (len(visible), 1))
+    strip.putdata(visible)
+    reduced = strip.quantize(colors=max_colors, dither=Image.Dither.NONE).convert("RGB")
+    return sorted({"#%02X%02X%02X" % color for color in reduced.get_flattened_data()})
 
 
 def _load_asset(store: AssetStore, asset_id: str) -> tuple[Manifest, Image.Image]:
@@ -177,6 +188,10 @@ def _original_image(store: AssetStore, manifest: Manifest, fallback: Image.Image
         raise ValueError(f"Preserved original PNG is unavailable: {exc}") from exc
     if hashlib.sha256(raw).hexdigest() != digest:
         raise ValueError("Preserved original PNG digest changed")
+    if "preparation" in manifest.metadata:
+        from .preparation import fit_source
+
+        return fit_source(_decode_png(raw, 4096), **manifest.metadata["preparation"])
     return _decode_png(raw)
 
 
@@ -203,24 +218,24 @@ def _save_revision(
 def import_image(
     store: AssetStore, image: str, display_name: str = "Imported sprite",
     palette: list[str] | None = None, alpha_cutoff: int | None = None,
+    *, description: str | None = None, asset_type: str = "character",
+    parent_asset_id: str | None = None, metadata: dict | None = None, canvas: Canvas | None = None,
 ) -> dict[str, Any]:
     """Import base64/data-URL PNG, preserving source bytes; cleanup requires explicit inputs."""
     decoded, raw = _decode_input(image)
+    if canvas is not None and decoded.size != (canvas.width, canvas.height):
+        raise ValueError("Imported image dimensions differ from the requested canvas")
     processed = _cutoff(decoded, alpha_cutoff)
     if palette is not None:
         palette = _palette(palette)
         processed = _quantize(processed, palette)
-    metadata = {"operation": "import", "original_sha256": hashlib.sha256(raw).hexdigest()}
+    metadata = {**(metadata or {}), "operation": "import"}
     if alpha_cutoff is not None:
         metadata["alpha_cutoff"] = alpha_cutoff
-    result = store.save_image(
-        processed, description=display_name, palette=palette, template="imported",
-        metadata=metadata,
+    return store.save_image(
+        processed, description=description or display_name, palette=palette, template="imported",
+        asset_type=asset_type, parent_asset_id=parent_asset_id, metadata=metadata, source_png=raw,
     )
-    source = store._path("generated", result["asset_id"], "source.png")
-    with source.open("xb") as output:
-        output.write(raw)
-    return result
 
 
 import_asset = import_image
@@ -282,14 +297,7 @@ def refine_sprite(
         image = _original_image(store, manifest, image)
     image = _cutoff(image, alpha_cutoff)
     if max_colors is not None:
-        _integer(max_colors, "max_colors", 1, 32)
-        visible = [pixel[:3] for pixel in image.get_flattened_data() if pixel[3]]
-        if not visible:
-            raise ValueError("Refinement must preserve visible pixels")
-        strip = Image.new("RGB", (len(visible), 1))
-        strip.putdata(visible)
-        reduced = strip.quantize(colors=max_colors, dither=Image.Dither.NONE).convert("RGB")
-        palette = sorted({"#%02X%02X%02X" % color for color in reduced.get_flattened_data()})
+        palette = _reduced_palette(image, max_colors)
     if palette is not None:
         palette = _palette(palette)
         image = _quantize(image, palette)
@@ -305,9 +313,18 @@ def remove_background(
     store: AssetStore, asset_id: str, color: str, tolerance: int = 0,
 ) -> dict[str, Any]:
     """Remove only border-connected pixels within per-channel RGB tolerance of a matte."""
+    manifest, image = _load_asset(store, asset_id)
+    removed = _remove_matte(image, color, tolerance)
+    return _save_revision(
+        store, manifest, image, "remove_background", background_color=color.upper(),
+        background_tolerance=tolerance, removed_pixels=removed,
+    )
+
+
+def _remove_matte(image: Image.Image, color: str, tolerance: int = 0) -> int:
+    """Mutate a native-size image, removing only the border-connected matte."""
     matte = _rgb(color)
     _integer(tolerance, "tolerance", 0, 255)
-    manifest, image = _load_asset(store, asset_id)
     pixels = image.load()
     queue = deque([(x, y) for x in range(image.width) for y in (0, image.height - 1)])
     queue.extend((x, y) for y in range(image.height) for x in (0, image.width - 1))
@@ -327,10 +344,7 @@ def remove_background(
             removed += 1
         queue.extend((nx, ny) for nx, ny in ((x - 1, y), (x + 1, y), (x, y - 1), (x, y + 1))
                      if 0 <= nx < image.width and 0 <= ny < image.height)
-    return _save_revision(
-        store, manifest, image, "remove_background", background_color=color.upper(),
-        background_tolerance=tolerance, removed_pixels=removed,
-    )
+    return removed
 
 
 def set_asset_alpha_cutoff(
@@ -393,8 +407,9 @@ def auto_slice_asset(store: AssetStore, asset_id: str, max_slices: int = 64) -> 
     remaining = {(x, y) for y in range(image.height) for x in range(image.width)
                  if alpha.getpixel((x, y))}
     components = []
-    while remaining:
-        seed = min(remaining, key=lambda point: (point[1], point[0]))
+    for seed in sorted(remaining, key=lambda point: (point[1], point[0])):
+        if seed not in remaining:
+            continue
         remaining.remove(seed)
         points = [seed]
         queue = deque([seed])

@@ -71,7 +71,58 @@ def test_image_generation_preserves_workflow_metadata_and_edit_parent(tmp_path):
         assert manifest.parent_asset_id == parent["asset_id"]
         assert manifest.type == "ui"
         assert manifest.metadata["perspective"] == "isometric"
-        assert manifest.metadata["original_asset_id"]
+        assert store._path("generated", manifest.asset_id, "source.png").is_file()
+        assert len(list((store.root / "generated").iterdir())) == 2
+
+    asyncio.run(exercise())
+
+
+@pytest.mark.parametrize("kwargs", [
+    {"durations_ms": [80]}, {"duration_ms": 11}, {"loop": "yes"},
+    {"wait_seconds": 31}, {"frames": [drawing(2), drawing(2)]},
+])
+def test_invalid_animation_never_persists_partial_poses(tmp_path, kwargs):
+    async def exercise():
+        store = AssetStore(tmp_path)
+        service = Production(store, JobManager(tmp_path))
+        parent = store.save_image(Image.new("RGBA", (8, 8), "#00FF00"), "Master")
+        with pytest.raises(ValueError):
+            await service.animate(
+                parent["asset_id"], "walk", None,
+                **{"frames": [drawing(2), drawing(3)], **kwargs},
+            )
+        assert len(list((tmp_path / "generated").iterdir())) == 1
+        assert not list((tmp_path / "jobs").iterdir())
+
+    asyncio.run(exercise())
+
+
+def test_transparent_master_rejects_opaque_poses_before_writing(tmp_path):
+    async def exercise():
+        store = AssetStore(tmp_path)
+        service = Production(store, JobManager(tmp_path))
+        image = Image.new("RGBA", (8, 8))
+        image.putpixel((3, 3), (0, 255, 0, 255))
+        parent = store.save_image(image, "Transparent master")
+        opaque = {"rows": ["XXXXXXXX"] * 8, "palette": {"X": "#00FF00"}}
+        with pytest.raises(ValueError, match="transparent"):
+            await service.animate(parent["asset_id"], "walk", None, frames=[opaque, drawing()])
+        assert len(list((tmp_path / "generated").iterdir())) == 1
+        assert not list((tmp_path / "jobs").iterdir())
+
+    asyncio.run(exercise())
+
+
+def test_invalid_timing_fails_before_requesting_client_sampling(tmp_path):
+    async def exercise():
+        store = AssetStore(tmp_path)
+        service = Production(store, JobManager(tmp_path))
+        parent = store.save_image(Image.new("RGBA", (8, 8), "#00FF00"), "Master")
+        with pytest.raises(ValueError, match="duration|Every"):
+            await service.animate(
+                parent["asset_id"], "walk", None, output_frames=3, durations_ms=[80],
+            )
+        assert not list((tmp_path / "jobs").iterdir())
 
     asyncio.run(exercise())
 

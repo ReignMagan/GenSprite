@@ -2,7 +2,7 @@
 
 GenSprite is a local sprite-production toolkit that AI agents use through the **Model Context Protocol (MCP)**. Your AI agent creates the artwork and animation poses. GenSprite turns that artwork into pixel-accurate sprites, refines images, assembles animations, preserves asset history, organizes projects, and exports reusable files for games.
 
-**Current release: 1.2.0, with 65 MCP tools.** The Windows installer connects GenSprite to Codex without requiring a separate Python installation.
+**Current release: 1.3.0, with 67 MCP tools.** The Windows installer connects GenSprite to Codex or OpenCode without requiring a separate Python installation.
 
 GenSprite runs on your computer over **stdio**: Codex starts a local process and communicates through its standard input and output. You do not need a server URL, port, browser dashboard, hosted account, GPU, or image-provider API key for GenSprite. There is no bundled AI image model. Your connected agent supplies pixels, PNGs, or animation frames; clients that support MCP sampling can also ask their model to author artwork through that optional path.
 
@@ -11,6 +11,8 @@ GenSprite processes supplied artwork locally. Your AI client may still use a clo
 ## Contents
 
 - [Choose an installation method](#choose-an-installation-method)
+- [Prepare Soul Knight-inspired pixel art](#prepare-soul-knight-inspired-pixel-art)
+- [Connect OpenCode locally](#connect-opencode-locally)
 - [Install on Windows with Setup](#install-on-windows-with-setup)
 - [Install from source](#install-from-source)
 - [Install a Python wheel](#install-a-python-wheel)
@@ -28,15 +30,57 @@ GenSprite processes supplied artwork locally. Your AI client may still use a clo
 
 | Method | Best for | What you need |
 | --- | --- | --- |
-| **Windows Setup - recommended for Codex users** | Connect an existing project through a folder picker | Windows x64, Codex, and `GenSprite-Setup.exe` |
+| **Windows Setup - recommended for Codex/OpenCode users** | Connect an existing project through a folder picker | Windows x64, Codex or OpenCode, and `GenSprite-Setup.exe` |
 | **Source installation** | Work on GenSprite or use a Python-based local MCP | Complete source checkout, uv, and Python 3.11 or newer; uv can provide Python |
 | **Python wheel** | Use a packaged Python release without keeping the source checkout | Python 3.11 or newer and the release `.whl` file |
 
 The Windows installer has been checked on Windows 11 x64. Source installation also provides the platform-independent Python server; the Windows `.exe` is specifically for Windows x64.
 
-You need a local MCP-capable client to use the tools. The automatic installer currently configures **Codex on Windows**. Other clients need their own stdio configuration. Installing GenSprite does not install Codex, provide a model account, or change the client's trust and approval policies.
+You need a local MCP-capable client to use the tools. The automatic installer configures **Codex or OpenCode on Windows**. Other clients need their own stdio configuration. Installing GenSprite does not install an AI client, provide a model account, or change the client's trust and approval policies.
 
 This project is currently distributed locally. The steps below refer to files you already have; there is no public download service assumed by this guide.
+
+## Prepare Soul Knight-inspired pixel art
+
+Start with `sprite_art_brief(description, width=32, height=32)`. It returns an image prompt, negative prompt, and animation guidance for original dungeon characters: compact chibi silhouettes, readable equipment, crisp one-pixel dark outlines, coherent lighting, and small material color ramps. Pass that prompt to your AI client's image-generation tool. The AI client supplies the artwork and new animation poses.
+
+For a large AI PNG, call `prepare_sprite` with `image_path` (an absolute local PNG path) or base64 `image`. Sources can be 8..4096 pixels per side and up to 4 MiB. Preparation fits the **full image** proportionally inside an 8..256px native canvas with nearest-neighbor resampling and padding (default 2px), converts alpha at an explicit cutoff (default 128), and reduces colors without dithering (default 16). Supply `palette` to lock colors across poses, or `max_colors` to choose a color budget. Optional `background_color` removes only a border-connected flat matte. The source PNG and its digest are retained.
+
+```json
+{
+  "image_path": "C:\\Games\\KnightGame\\art\\ranger.png",
+  "display_name": "Forest ranger",
+  "width": 32,
+  "height": 32,
+  "padding": 2,
+  "max_colors": 16,
+  "alpha_cutoff": 128
+}
+```
+
+Use `import_asset` for artwork already on its intended native grid; it preserves exact pixels. If an image is an integer enlargement of native pixels and already has the desired framing, use that native width/height and `padding=0` in `prepare_sprite`. Preparation does not automatically trim individual poses or invent missing detail. Consistent source framing, perspective, equipment, native canvas, palette, and preparation settings are required for coherent motion.
+
+Call `review_asset` on the prepared master and inspect the actual image. Revise the master before authoring poses. Prepare each pose with the same palette and placement, then call `animate_game_art` with `frame_asset_ids` and `durations_ms`. Durations must be multiples of 10 ms; use longer durations for holds. Review the contact sheet and GIF, export, label the master, and call `build_asset_library` once the batch is finished.
+
+Example request to your AI client:
+
+> Use GenSprite's sprite_art_brief for an original Soul Knight-inspired forest ranger at 32x32. Generate the master with your image tool, prepare it, inspect review_asset, and refine it. Keep the character's identity, outline, palette, and foot pivot consistent while authoring idle and attack poses. Assemble and review the animations, then deliver the named asset library.
+
+Pixel-grid correctness and aesthetic quality are separate: nearest-neighbor preparation makes crisp output, but the client still needs to generate well-designed art and inspect it visually. GenSprite does not bundle an image model or infer articulated poses from a single picture.
+
+## Connect OpenCode locally
+
+From this checkout, install dependencies with `uv sync --locked`, then run:
+
+```powershell
+opencode mcp list
+```
+
+The included `opencode.json` launches `uv run --locked gensprite-mcp --output-dir .gensprite` as a local stdio process. It uses this project's environment and stores assets under this project's `.gensprite`. Reopen OpenCode after changing configuration. No HTTP server or API key is needed for GenSprite.
+
+For a different game project, use Windows Setup, select **OpenCode**, choose the game folder, and click **Connect project**. Setup verifies the runtime before saving `opencode.json`, preserves unrelated settings, and backs up changed files. If a project uses JSONC comments or trailing commas, automatic setup refuses to rewrite it; add the local entry manually using the [deployment example](docs/deployment.md#opencode-local-connection). It never creates a second configuration to silently shadow your commented file.
+
+The checked CLI is OpenCode 1.18.31. Its local MCP format is documented in [OpenCode's MCP guide](https://opencode.ai/docs/mcp-servers/). Existing v2 `mcp.servers` configuration is preserved by setup; see [OpenCode's migration guide](https://opencode.ai/v2/docs/migrate-v1) when using v2.
 
 ## Install on Windows with Setup
 
@@ -81,20 +125,20 @@ Get-Content .\GenSprite-Setup.exe.sha256
 
 Compare the hexadecimal digest in both outputs. A matching checksum checks file integrity; it does not authenticate the publisher.
 
-### 4. Connect the folder to Codex
+### 4. Connect the folder to your client
 
-In the **GenSprite - Connect to Codex** window:
+In the **GenSprite - Connect your MCP client** window:
 
 1. Click **Choose folder...**.
 2. Select your game project root.
 3. Check that the displayed folder is correct.
-4. Click **Connect to Codex**.
+4. Select **Codex** (or **OpenCode**) and click **Connect project**.
 5. Wait for the connection check to finish.
 
 A successful installation reports:
 
 ```text
-Connected. GenSprite is ready with 65 tools.
+Connected. GenSprite is ready with 67 tools.
 ```
 
 Setup copies a verified server executable into your Windows user profile, starts it to check the real MCP connection, and writes the project's Codex configuration after that check succeeds. Existing unrelated settings and comments are preserved. Changed existing configuration is backed up automatically. Setup does not generate sample artwork.
@@ -123,6 +167,7 @@ Then follow [the first-sprite steps](#confirm-the-connection-and-create-your-fir
 | --- | --- |
 | `%LOCALAPPDATA%\GenSprite\versions\<version>-<digest>\GenSpriteMCP.exe` | Shared, versioned local server runtime |
 | `<your-project>\.codex\config.toml` | Project-specific Codex MCP configuration |
+| `<your-project>\opencode.json` | Project-specific configuration when OpenCode is selected |
 | `<your-project>\.gensprite` | Asset, animation, revision, job, and export store; populated as the server is used |
 | `%LOCALAPPDATA%\GenSprite\backups\<project-identity>` | Backups made when existing configuration changes |
 
@@ -227,7 +272,7 @@ $pythonExe = Join-Path $runtimeDir '.venv\Scripts\python.exe'
 Replace the wheel path if your release is somewhere else:
 
 ```powershell
-& $pythonExe -m pip install 'C:\GenSprite\dist\gensprite_mcp-1.2.0-py3-none-any.whl'
+& $pythonExe -m pip install 'C:\GenSprite\dist\gensprite_mcp-1.3.0-py3-none-any.whl'
 & $pythonExe -m pip check
 & $pythonExe -m gensprite_mcp --help
 $pythonExe
@@ -251,7 +296,7 @@ These are prompts for your connected AI agent. They do not require a demo webpag
 
 > Use GenSprite to inspect its available tools. Confirm the server is connected, and explain where this project's assets will be stored. Do not create any assets yet.
 
-Version 1.2.0 exposes 65 tools. If the client cannot find them, check the project folder, configuration, and trust state before asking it to generate artwork.
+Version 1.3.0 exposes 67 tools. If the client cannot find them, check the project folder, configuration, and trust state before asking it to generate artwork.
 
 ### 2. Exercise a built-in sprite and animation
 
@@ -318,7 +363,7 @@ To receive this update in an installed project, run the new `dist\GenSprite-Setu
 
 ## Connect another project
 
-For a Setup installation, run the same `GenSprite-Setup.exe` again, select the other project's root, and click **Connect to Codex**. Reopen Codex in that project.
+For a Setup installation, run the same `GenSprite-Setup.exe` again, select the client and other project's root, and click **Connect project**. Reopen the selected client in that project.
 
 Each connected project gets its own `.codex/config.toml` entry and `.gensprite` store. The installed runtime can be shared; assets and history are separate. Repeating Setup for the same project and release is safe and does not reset existing artwork.
 

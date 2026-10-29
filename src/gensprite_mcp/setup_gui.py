@@ -52,11 +52,12 @@ class SetupWindow:
         self.last_result: InstallResult | None = None
         self.events: queue.Queue = queue.Queue()
         self.project = tk.StringVar()
+        self.client = tk.StringVar(value="Codex")
         self.status = tk.StringVar(value="Choose a folder to get started.")
         self.details = tk.StringVar(value="Your sprites and history will stay with that project.")
-        root.title("GenSprite - Connect to Codex")
-        root.geometry("700x440")
-        root.minsize(640, 420)
+        root.title("GenSprite - Connect your MCP client")
+        root.geometry("700x500")
+        root.minsize(640, 500)
         root.protocol("WM_DELETE_WINDOW", self.close)
         frame = ttk.Frame(root, padding=28)
         frame.pack(fill="both", expand=True)
@@ -67,10 +68,18 @@ class SetupWindow:
         ).grid(sticky="w", pady=(12, 8))
         ttk.Label(
             frame,
-            text="Connect a game project to GenSprite in Codex.\n"
+            text="Connect a game project to GenSprite in Codex or OpenCode.\n"
             "Python and the MCP runtime are included.",
             font=("Segoe UI", 11),
         ).grid(sticky="w", pady=(0, 24))
+        clients = ttk.Frame(frame)
+        clients.grid(sticky="ew", pady=(0, 16))
+        ttk.Label(clients, text="MCP client").grid(row=0, column=0, padx=(0, 12))
+        self.client_picker = ttk.Combobox(
+            clients, textvariable=self.client, values=("Codex", "OpenCode"),
+            state="readonly", width=18,
+        )
+        self.client_picker.grid(row=0, column=1)
         ttk.Label(frame, text="Game project folder", font=("Segoe UI", 10, "bold")).grid(sticky="w")
         folders = ttk.Frame(frame)
         folders.grid(sticky="ew", pady=(8, 16))
@@ -80,7 +89,7 @@ class SetupWindow:
         self.browse_button = ttk.Button(folders, text="Choose folder...", command=self.browse)
         self.browse_button.grid(row=0, column=1, padx=(10, 0), ipady=4)
         self.connect_button = ttk.Button(
-            frame, text="Connect to Codex", command=self.connect, state="disabled"
+            frame, text="Connect project", command=self.connect, state="disabled"
         )
         self.connect_button.grid(sticky="w", ipady=6)
         ttk.Separator(frame).grid(sticky="ew", pady=20)
@@ -115,10 +124,11 @@ class SetupWindow:
             return
         self.busy = True
         self.last_result = None
-        for widget in (self.entry, self.browse_button, self.connect_button):
+        client = self.client.get()
+        for widget in (self.entry, self.browse_button, self.connect_button, self.client_picker):
             widget.configure(state="disabled")
         self.status.set("Connecting your project...")
-        self.details.set("Setup will preserve other Codex settings and check the local MCP.")
+        self.details.set(f"Setup will preserve other {client} settings and check the local MCP.")
 
         def worker() -> None:
             try:
@@ -129,6 +139,7 @@ class SetupWindow:
                     self.manifest["version"],
                     self.install_root,
                     progress=lambda message: self.events.put(("progress", message)),
+                    client=client.lower(),
                 )
                 self.events.put(("success", result))
             except Exception as exc:
@@ -145,12 +156,13 @@ class SetupWindow:
             self.busy = False
             for widget in (self.entry, self.browse_button):
                 widget.configure(state="normal")
+            self.client_picker.configure(state="readonly")
             self._selection_changed()
             if kind == "success":
                 self.last_result = value
                 self.status.set(f"Connected. GenSprite is ready with {value.tool_count} tools.")
                 self.details.set(
-                    "Reopen Codex in this project and trust the folder if asked.\n"
+                    f"Reopen {self.client.get()} in this project and trust the folder if asked.\n"
                     "You can reopen Setup to connect another project."
                 )
             else:
@@ -205,10 +217,16 @@ def self_check(payload: Path, manifest: dict) -> dict:
         second = temporary_path / "second game"
         second.mkdir()
         other = connect_project(
-            second, payload, manifest["sha256"], manifest["version"], install_root
+            second, payload, manifest["sha256"], manifest["version"], install_root,
+            client="opencode",
         )
         if other.output_dir == result.output_dir:
             raise ValueError("Different projects share an asset store")
+        opencode = json.loads(other.config_path.read_text(encoding="utf-8"))
+        if opencode["mcp"]["gensprite"]["command"] != [
+            str(other.executable), "--output-dir", str(other.output_dir),
+        ]:
+            raise ValueError("OpenCode setup recorded the wrong local command")
         count = result.tool_count
     if temporary_path.exists():
         raise ValueError("Temporary setup data was not removed")
@@ -221,6 +239,7 @@ def self_check(payload: Path, manifest: dict) -> dict:
         "backup_verified": True,
         "idempotent": True,
         "separate_projects": True,
+        "opencode_configuration_checked": True,
         "temporary_outputs_removed": True,
     }
 
@@ -236,7 +255,7 @@ def main() -> int:
             report = self_check(payload, manifest)
         else:
             if os.name != "nt" or not os.environ.get("LOCALAPPDATA"):
-                raise ValueError("This installer supports Codex on Windows only")
+                raise ValueError("This installer supports Codex and OpenCode on Windows only")
             import tkinter as tk
 
             root = tk.Tk()

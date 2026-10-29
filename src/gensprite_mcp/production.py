@@ -8,28 +8,15 @@ from mcp import types
 from mcp.server.fastmcp import Context, FastMCP
 from pydantic import Field
 
+from .art_direction import ART_DIRECTION
 from .assets import AssetStore
 from .drawing import PixelDrawing
-from .image_ops import _decode_input, import_image
+from .image_ops import import_image
 from .jobs import JobManager
 from .models import AnimationRequest, Canvas, FrameAnimationRequest, Size
 
 Wait = Annotated[int, Field(strict=True, ge=0, le=30)]
 Count = Annotated[int, Field(strict=True, ge=1, le=16)]
-
-
-ART_DIRECTION = (
-    "Act as a deliberate pixel artist. Establish subject, native size, perspective, light "
-    "direction and a compact palette before drawing. Keep a readable silhouette at actual "
-    "size, connected color clusters, purposeful outlines, and clear material contrast. "
-    "Avoid stray pixels, muddy near-identical colors, and detail that obscures the pose. "
-    "Preserve reference proportions, equipment, colors and facing across revisions. "
-    "For motion, plan anticipation, action/contact and recovery as appropriate; show weight "
-    "shifts and articulated limbs instead of merely translating the entire sprite. Keep "
-    "ground contact and a stable pivot unless the action requires displacement. "
-    "Choose frame durations for deliberate holds and fast actions. Review at native size "
-    "and enlarged, using the actual pixels rather than assuming the prompt was fulfilled."
-)
 
 
 class Production:
@@ -123,8 +110,6 @@ class Production:
             raise ValueError("wait_seconds must be an integer from0 through30")
         if (image or drawing) and variations != 1:
             raise ValueError("Supplied artwork is one variation; submit distinct artwork per job")
-        if image and _decode_input(image)[0].size != (width, height):
-            raise ValueError("Imported image dimensions differ from the requested canvas")
         reference = edit_asset_id or reference_asset_id
         if reference and self.store.validate_sprite(reference)["errors"]:
             raise ValueError("Reference asset validation failed")
@@ -132,7 +117,7 @@ class Production:
             from .catalog import Catalog
 
             Catalog(self.store.root).list_collections(project_id=project_id, limit=1)
-        prepared: list[PixelDrawing] = []
+        prepared = []
         for variant in range(variations):
             if image:
                 break
@@ -156,37 +141,25 @@ class Production:
                     reference,
                 )
             parsed = PixelDrawing.model_validate(pixels)
-            if parsed.image().size != (width, height):
+            rendered = parsed.image()
+            if rendered.size != (width, height):
                 raise ValueError("Agent drawing dimensions differ from the requested canvas")
-            prepared.append(parsed)
+            prepared.append((parsed, rendered))
 
         def work() -> dict:
             assets = []
             for variant in range(variations):
                 if image:
-                    imported = import_image(self.store, image, prompt[:100], palette=colors)
-                    origin = self.store._manifest(imported["asset_id"])
-                    from PIL import Image
-
-                    with Image.open(imported["png_path"]) as source_image:
-                        saved = self.store.save_image(
-                            source_image,
-                            prompt,
-                            palette=colors or origin.palette,
-                            template="imported",
-                            asset_type=mode,
-                            parent_asset_id=edit_asset_id or origin.asset_id,
-                            metadata={
-                                **origin.metadata,
-                                "original_asset_id": origin.asset_id,
-                                "reference_asset_id": reference,
-                                **(metadata or {}),
-                            },
-                        )
+                    saved = import_image(
+                        self.store, image, description=prompt, palette=colors,
+                        asset_type=mode, parent_asset_id=edit_asset_id,
+                        metadata={**(metadata or {}), "reference_asset_id": reference},
+                        canvas=Canvas(width=width, height=height),
+                    )
                 else:
-                    item = prepared[variant]
+                    item, rendered = prepared[variant]
                     saved = self.store.save_image(
-                        item.image(),
+                        rendered,
                         prompt,
                         palette=colors or list(item.palette.values()),
                         parent_asset_id=edit_asset_id,
@@ -229,6 +202,12 @@ class Production:
         wait_seconds: int = 0,
         perspective: str | None = None,
     ) -> dict:
+        if type(wait_seconds) is not int or not 0 <= wait_seconds <= 30:
+            raise ValueError("wait_seconds must be an integer from 0 through 30")
+        if output_frames is not None and (
+            type(output_frames) is not int or not 1 <= output_frames <= 16
+        ):
+            raise ValueError("output_frames must be an integer from 1 through 16")
         source = self.store._manifest(asset_id)
         if self.store.validate_sprite(asset_id)["errors"]:
             raise ValueError("Animation source validation failed")
@@ -241,7 +220,7 @@ class Production:
         motion = re.sub(r"[^a-z0-9_]+", "_", prompt.lower()).strip("_")[:32] or "motion"
         if not motion[0].isalpha():
             motion = "motion_" + motion[:25]
-        from .animation import is_native_knight
+        from .animation import _load_frames, _write_animation, is_native_knight, validate_frames
 
         native = (
             is_native_knight(self.store, source)
@@ -251,9 +230,18 @@ class Production:
             and not frames
             and output_frames is None
         )
-        count = len(frame_asset_ids or frames or []) or output_frames or 8
+        count = (4 if prompt.lower() == "idle" else 6) if native else (
+            len(frame_asset_ids or frames or []) or output_frames or 8
+        )
         if type(count) is not int or not 1 <= count <= 16:
             raise ValueError("Animation frame count must be 1..16")
+        if output_frames is not None and count != output_frames:
+            raise ValueError("Supplied poses differ from output_frames")
+        timing = FrameAnimationRequest(
+            asset_id=asset_id, frame_asset_ids=[asset_id] * count, name=motion,
+            durations_ms=durations_ms if durations_ms is not None else [duration_ms] * count,
+            loop=loop if loop is not None else motion in ("idle", "walk", "run"),
+        )
         if not native and not frame_asset_ids and not frames:
             sampled = await self._request(
                 ctx,
@@ -274,14 +262,15 @@ class Production:
             frames = sampled.get("frames")
             if not isinstance(frames, list) or len(frames) != count:
                 raise ValueError("Agent animation response has the wrong frame count")
-        parsed = [PixelDrawing.model_validate(frame) for frame in (frames or [])]
-        if output_frames is not None and count != output_frames:
-            raise ValueError("Supplied poses differ from output_frames")
+        parsed = [PixelDrawing.model_validate(frame).image() for frame in (frames or [])]
+        if frame_asset_ids:
+            parsed = _load_frames(self.store, source, frame_asset_ids)
+        if not native:
+            validate_frames(source, parsed, timing.durations_ms, motion, timing.loop)
 
         def work() -> dict:
             if native:
                 if durations_ms is not None or loop is not None:
-                    from .animation import _write_animation
                     from .knight import draw_knight
 
                     count = 4 if prompt.lower() == "idle" else 6
@@ -314,9 +303,9 @@ class Production:
                     )
             else:
                 ids = list(frame_asset_ids or [])
-                for frame in parsed:
+                for frame in ([] if frame_asset_ids else parsed):
                     saved = self.store.save_image(
-                        frame.image(),
+                        frame,
                         f"{motion} pose",
                         palette=source.palette,
                         parent_asset_id=asset_id,
@@ -324,14 +313,9 @@ class Production:
                         metadata={"animation_source": asset_id},
                     )
                     ids.append(saved["asset_id"])
-                result = self.store.assemble_animation(
-                    FrameAnimationRequest(
-                        asset_id=asset_id,
-                        frame_asset_ids=ids,
-                        name=motion,
-                        durations_ms=durations_ms or [duration_ms] * len(ids),
-                        loop=loop if loop is not None else motion in ("idle", "walk", "run"),
-                    )
+                result = _write_animation(
+                    self.store, source, parsed, timing.durations_ms, motion,
+                    timing.loop, "agent_frames", ids,
                 )
             result["sprite_url"] = (
                 result["spritesheet_path"]

@@ -1,4 +1,4 @@
-"""Local Windows setup: verified runtime, safe Codex configuration, real MCP check."""
+"""Local Windows setup: verified runtime, safe client configuration, real MCP check."""
 
 import ctypes
 import hashlib
@@ -57,11 +57,11 @@ def _read_config(path: Path) -> bytes | None:
     if not path.exists():
         return None
     if not path.is_file() or path.stat().st_size > MAX_CONFIG:
-        raise ValueError("Codex configuration must be a file no larger than 1 MiB")
+        raise ValueError("Client configuration must be a file no larger than 1 MiB")
     with path.open("rb") as stream:
         raw = stream.read(MAX_CONFIG + 1)
     if len(raw) > MAX_CONFIG:
-        raise ValueError("Codex configuration exceeds 1 MiB")
+        raise ValueError("Client configuration exceeds 1 MiB")
     return raw
 
 
@@ -95,6 +95,73 @@ def prepare_config(existing: bytes | None, executable: Path, project: Path) -> b
         raise ValueError("Codex configuration is invalid; correct it before connecting") from exc
     if len(updated) > MAX_CONFIG:
         raise ValueError("Updated Codex configuration exceeds 1 MiB")
+    return updated
+
+
+def prepare_opencode_config(existing: bytes | None, executable: Path, project: Path) -> bytes:
+    """Preserve strict JSON settings and the existing OpenCode v1/v2 layout."""
+    if existing is not None and len(existing) > MAX_CONFIG:
+        raise ValueError("OpenCode configuration exceeds 1 MiB")
+
+    def unique_object(pairs):
+        document = {}
+        for key, value in pairs:
+            if key in document:
+                raise ValueError("Duplicate JSON key")
+            document[key] = value
+        return document
+
+    try:
+        document = json.loads(
+            (existing or b"{}").decode("utf-8-sig"), object_pairs_hook=unique_object,
+        )
+        if not isinstance(document, dict):
+            raise ValueError("Configuration must be an object")
+        servers = document.setdefault("mcp", {})
+        if not isinstance(servers, dict):
+            raise ValueError("mcp must be an object")
+        named_server = servers.get("servers")
+        v2 = "servers" in servers and not (
+            isinstance(named_server, dict) and (
+                named_server.get("type") in ("local", "remote")
+                or isinstance(named_server.get("enabled"), bool)
+            )
+        )
+        if v2:
+            servers = servers["servers"]
+            if not isinstance(servers, dict):
+                raise ValueError("mcp.servers must be an object")
+        previous = servers.get("gensprite", {})
+        if not isinstance(previous, dict):
+            raise ValueError("gensprite must be an object")
+        # Keep client policy outside the server entry; replace obsolete transport settings.
+        server = {
+            "type": "local",
+            "command": [str(executable), "--output-dir", str(project / ".gensprite")],
+        }
+        for key in ("environment", "codemode", "protocol"):
+            if key in previous:
+                server[key] = previous[key]
+        if v2:
+            timeout = previous.get("timeout", {})
+            if not isinstance(timeout, dict):
+                raise ValueError("v2 timeout must be an object")
+            server.update(disabled=False, timeout={**timeout, "startup": 60000})
+        else:
+            server.update(enabled=True, timeout=60000)
+        servers["gensprite"] = server
+        document.setdefault("$schema", "https://opencode.ai/config.json")
+        updated = (
+            json.dumps(document, ensure_ascii=False, indent=2, allow_nan=False) + "\n"
+        ).encode()
+    except (ValueError, TypeError, UnicodeError, KeyError) as exc:
+        raise ValueError(
+            "OpenCode configuration requires valid JSON. JSONC comments/trailing commas are "
+            "preserved by refusing automatic edits; add the local GenSprite entry manually "
+            "using docs/deployment.md. Existing configuration was not changed."
+        ) from exc
+    if len(updated) > MAX_CONFIG:
+        raise ValueError("Updated OpenCode configuration exceeds 1 MiB")
     return updated
 
 
@@ -172,7 +239,7 @@ def check_connection(command: list[str], timeout: float = 60) -> dict:
                     line = received.get(timeout=max(0.001, deadline - time.monotonic()))
                 except queue.Empty as exc:
                     raise ValueError(
-                        "GenSprite connection check timed out; close Codex and retry"
+                        "GenSprite connection check timed out; close the MCP client and retry"
                     ) from exc
                 if not line:
                     raise ValueError("GenSprite closed before responding; reinstall and retry")
@@ -272,7 +339,10 @@ def connect_project(
     version: str,
     install_root: Path,
     progress: Callable[[str], None] | None = None,
+    *, client: str = "codex",
 ) -> InstallResult:
+    if client not in ("codex", "opencode"):
+        raise ValueError("client must be codex or opencode")
     project, source, install_root = project.absolute(), source.absolute(), install_root.absolute()
     for path in (project, source, install_root):
         _safe(path)
@@ -287,13 +357,22 @@ def connect_project(
     if _digest(source) != expected_sha256:
         raise ValueError("GenSprite runtime digest changed; download setup again")
     config = project / ".codex" / "config.toml"
+    if client == "opencode":
+        config = project / "opencode.json"
+        commented = project / "opencode.jsonc"
+        _safe(commented)
+        if commented.exists():
+            if config.exists():
+                raise ValueError("Both OpenCode JSON and JSONC configurations exist; edit manually")
+            config = commented
     output = project / ".gensprite"
     _check_output(output)
     original = _read_config(config)
     executable = (
         install_root / "versions" / f"{version}-{expected_sha256[:12]}" / "GenSpriteMCP.exe"
     )
-    updated = prepare_config(original, executable, project)
+    prepare = prepare_config if client == "codex" else prepare_opencode_config
+    updated = prepare(original, executable, project)
     if progress:
         progress("Installing GenSprite...")
     _safe(executable)
@@ -313,16 +392,16 @@ def connect_project(
         progress("Checking the MCP connection...")
     checked = check_connection([str(executable)])
     if progress:
-        progress("Saving your Codex connection...")
+        progress(f"Saving your {'Codex' if client == 'codex' else 'OpenCode'} connection...")
     _safe(config)
     _check_output(output)
     if _read_config(config) != original:
-        raise ValueError("Codex configuration changed during setup; close its editor and retry")
+        raise ValueError("Client configuration changed during setup; close its editor and retry")
     backup = None
     if updated != original:
         if original is not None:
             identity = hashlib.sha256(str(project).encode()).hexdigest()[:16]
-            backup = install_root / "backups" / identity / f"config-{uuid4().hex}.toml"
+            backup = install_root / "backups" / identity / f"config-{uuid4().hex}{config.suffix}"
             _safe(backup)
             backup.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
             with backup.open("xb") as previous:
@@ -338,7 +417,7 @@ def connect_project(
             if original is not None:
                 os.chmod(temporary, stat.S_IMODE(config.stat().st_mode))
             if _read_config(config) != original:
-                raise ValueError("Codex configuration changed during setup; retry")
+                raise ValueError("Client configuration changed during setup; retry")
             _replace_config(temporary, config, original is not None)
         finally:
             temporary.unlink(missing_ok=True)

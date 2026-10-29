@@ -2,6 +2,7 @@
 
 import asyncio
 import base64
+import io
 import json
 import subprocess
 import sys
@@ -12,9 +13,12 @@ from typing import Any
 
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
+from PIL import Image
 
 ROOT = Path(__file__).resolve().parents[1]
 REQUIRED_TOOLS = {
+    "sprite_art_brief",
+    "prepare_sprite",
     "review_asset",
     "build_asset_library",
     "animate_game_art",
@@ -90,6 +94,18 @@ async def smoke(command: list[str] | None = None) -> None:
                     assert not result.isError, f"{name} failed: {result.content}"
                     assert isinstance(result.structuredContent, dict), f"{name} returned no object"
                     return result.structuredContent
+
+                brief = await call("sprite_art_brief", {"description": "Release-check ranger"})
+                assert brief["canvas"] == {"width": 32, "height": 32}
+                raw = io.BytesIO()
+                Image.new("RGBA", (512, 512), "#00FF00").save(raw, format="PNG")
+                prepared = await call("prepare_sprite", {
+                    "image": base64.b64encode(raw.getvalue()).decode(),
+                    "width": 8, "height": 8, "padding": 0, "palette": ["#00FF00"],
+                })
+                assert Path(prepared["png_path"]).is_file()
+                validated = await call("validate_sprite", {"asset_id": prepared["asset_id"]})
+                assert validated["technical_status"] == "passed"
 
                 frames = []
                 for row in ("..XX....", "...XX..."):
@@ -177,7 +193,10 @@ def main() -> None:
         subprocess.run([sys.executable, "-m", *arguments], cwd=ROOT, check=True, timeout=300)
     print("Running isolated stdio MCP release smoke", flush=True)
     asyncio.run(asyncio.wait_for(smoke(), timeout=90))
-    print("Release checks passed: tests, lint, MCP artwork/animation/export/review/library.")
+    print(
+        "Release checks passed: tests, lint, MCP preparation, artwork, "
+        "animation, export, review and library."
+    )
 
 
 if __name__ == "__main__":

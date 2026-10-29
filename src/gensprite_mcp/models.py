@@ -3,7 +3,7 @@
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, WithJsonSchema, field_validator, model_validator
 
 Color = Annotated[str, Field(pattern=r"^#[0-9a-fA-F]{6}$")]
 Palette = Annotated[list[Color], Field(min_length=1, max_length=32)]
@@ -13,6 +13,7 @@ AssetId = Annotated[str, Field(pattern=r"^a_[0-9a-f]{32}$")]
 AnimationId = Annotated[str, Field(pattern=r"^n_[0-9a-f]{32}$")]
 Digest = Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
 Duration = Annotated[int, Field(strict=True, ge=10, le=10000, multiple_of=10)]
+LocalPath = Annotated[Path, WithJsonSchema({"type": "string"})]
 DEFAULT_PALETTE = ["#7F1D1D", "#EF4444", "#FCA5A5"]
 
 
@@ -123,8 +124,8 @@ class ValidationReport(Model):
 
 class SpriteResult(Model):
     asset_id: AssetId
-    png_path: Path
-    manifest_path: Path
+    png_path: LocalPath
+    manifest_path: LocalPath
     status: Literal["ready_for_export"] = "ready_for_export"
     validation: ValidationReport
 
@@ -201,10 +202,10 @@ class AnimationResult(Model):
     source_asset_id: AssetId
     motion: str
     frame_count: int
-    frame_paths: list[Path]
-    manifest_path: Path
-    spritesheet_path: Path
-    preview_path: Path
+    frame_paths: list[LocalPath]
+    manifest_path: LocalPath
+    spritesheet_path: LocalPath
+    preview_path: LocalPath
     status: Literal["ready_for_export"] = "ready_for_export"
     validation: ValidationReport
 

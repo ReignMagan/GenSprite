@@ -7,5 +7,6 @@ __pycache__/
 *.egg-info/
 dist/
 assets/
+.gensprite/
 
 .superpowers/

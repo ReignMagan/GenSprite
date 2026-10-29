@@ -6,7 +6,7 @@ The connected AI agent supplies the artwork as native-grid pixel rows, base64 PN
 
 ## Windows setup for Codex
 
-The local Windows x64 release includes `GenSprite-Setup.exe`. Open it, choose an existing game project folder, then click **Connect to Codex**. Reopen Codex in that project. Codex's own project-trust prompt and managed policies still apply; setup does not alter trust or tool approval policies.
+The local Windows x64 release includes `GenSprite-Setup.exe`. Open it, select **Codex** or **OpenCode**, choose an existing game project folder, then click **Connect project**. Reopen that client in the project. The client's trust and managed policies still apply; setup does not alter trust or tool approval policies.
 
 Python and all server dependencies are bundled. Setup needs no administrator privileges and makes no network calls. The user's connected AI model may still be cloud-based; explicit supplied artwork is processed locally by GenSprite.
 
@@ -47,7 +47,7 @@ Install the resulting wheel in a dedicated environment. For the current package 
 
 ```powershell
 python -m venv .venv
-.venv\Scripts\python.exe -m pip install .\dist\gensprite_mcp-1.2.0-py3-none-any.whl
+.venv\Scripts\python.exe -m pip install .\dist\gensprite_mcp-1.3.0-py3-none-any.whl
 .venv\Scripts\python.exe -m gensprite_mcp --output-dir C:\GenSpriteData
 ```
 
@@ -55,7 +55,7 @@ On Linux or macOS:
 
 ```sh
 python3 -m venv .venv
-.venv/bin/python -m pip install dist/gensprite_mcp-1.2.0-py3-none-any.whl
+.venv/bin/python -m pip install dist/gensprite_mcp-1.3.0-py3-none-any.whl
 .venv/bin/python -m gensprite_mcp --output-dir /absolute/path/to/gensprite-data
 ```
 
@@ -75,6 +75,32 @@ A client configuration using an installed Windows virtual environment looks like
 ```
 
 For Linux or macOS, use the absolute `.venv/bin/python` path and a writable absolute output directory. A stdio client owns the server process lifecycle; no shell wrapper or background web service is needed.
+
+## OpenCode local connection
+
+For an OpenCode v1 game project using this source checkout, add the following entry to its `opencode.json` or `opencode.jsonc`. Merge it into existing `mcp` settings, replacing the paths with your source environment and game project. The command array is executed directly; it does not require shell quoting.
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "gensprite": {
+      "type": "local",
+      "command": [
+        "C:\\GenSprite\\.venv\\Scripts\\python.exe",
+        "-m", "gensprite_mcp", "--output-dir",
+        "C:\\Games\\KnightGame\\.gensprite"
+      ],
+      "enabled": true,
+      "timeout": 60000
+    }
+  }
+}
+```
+
+Run `opencode mcp list` from that game folder; GenSprite should report connected. The checked client is OpenCode 1.18.31. Local configuration is described in the [official MCP documentation](https://opencode.ai/docs/mcp-servers/). In v2, put the entry under `mcp.servers`, replace `enabled: true` with `disabled: false`, and use `timeout: {"startup": 60000}`; see the [migration guide](https://opencode.ai/v2/docs/migrate-v1).
+
+Windows Setup supports strict JSON in existing `opencode.json`/`opencode.jsonc`, retaining other client settings and creating recoverable backups. Commented JSONC, trailing commas, duplicate JSON keys, conflicting config files, or malformed settings are refused before any configuration change. Add the example manually when keeping JSONC comments. Existing v2 `mcp.servers` layout is detected and preserved. New setup configurations use the checked v1 layout. Setup checks the real stdio server before writing settings; the client's own connection is checked with its CLI.
 
 ## Run in Docker
 
@@ -115,7 +141,7 @@ Use a local persistent filesystem writable by the server account. Preserve the c
 
 No human art-review gate blocks generation, animation, or export. `ready_for_export` means automated technical checks passed for those files. It does not certify artistic quality: the authoring agent remains responsible for deliberate pixel placement, readable silhouettes, consistent characters, palettes, and motion.
 
-Core limits are native canvases of 8..256 pixels per side, 1..32 palette colors, binary alpha, PNG inputs up to 4 MiB, and animations of 1..16 frames. Durations are 10..10,000 milliseconds in multiples of 10. Organization lists return at most 200 items; filesystem discovery scans at most 2,000 entries and explicitly marks incomplete totals. Private preset settings are bounded to 64 KiB of JSON. Invalid inputs and tampered source digests fail technical validation.
+Core limits are native canvases of 8..256 pixels per side, 1..32 palette colors, binary alpha, PNG inputs up to 4 MiB, and animations of 1..16 frames. `prepare_sprite` accepts source PNGs up to 4096px per side before explicit downsampling; native imports stay at 256px. Durations are 10..10,000 milliseconds in multiples of 10. Organization lists return at most 200 items; filesystem discovery scans at most 2,000 entries and explicitly marks incomplete totals. Private preset settings are bounded to 64 KiB of JSON. Invalid inputs and tampered source digests fail technical validation.
 
 GenSprite's local processing has no server-side credit meter. Client model subscriptions, token charges, hardware use, and storage still depend on your environment. This package does not use or reproduce SpriteCook's private hosted providers, subscriptions, or billing APIs. Export checks verify file contents, metadata, frame order and timing; game-engine imports and runtime behavior must be checked in the target engine.
 

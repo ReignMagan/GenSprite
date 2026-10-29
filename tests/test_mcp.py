@@ -7,6 +7,18 @@ from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
 
+def test_output_schemas_use_standard_string_paths_for_opencode():
+    from gensprite_mcp.models import AnimationResult, SpriteResult
+
+    for model in (SpriteResult, AnimationResult):
+        properties = model.model_json_schema()["properties"]
+        for name, schema in properties.items():
+            if name.endswith("_path") or name == "frame_paths":
+                path = schema["items"] if name == "frame_paths" else schema
+                assert path["type"] == "string"
+                assert path.get("format") != "path"
+
+
 def test_real_stdio_tools_and_persisted_assets(tmp_path):
     async def exercise():
         params = StdioServerParameters(

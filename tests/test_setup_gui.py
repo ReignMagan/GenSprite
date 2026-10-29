@@ -29,7 +29,8 @@ def test_payload_manifest_returns_the_bundled_runtime_only(tmp_path):
     assert manifest == metadata
 
 
-def test_project_picker_constructs_and_connects_without_blocking_ui(tmp_path, monkeypatch):
+@pytest.mark.parametrize("client", ["Codex", "OpenCode"])
+def test_project_picker_constructs_and_connects_without_blocking_ui(tmp_path, monkeypatch, client):
     tk = pytest.importorskip("tkinter")
     from gensprite_mcp import setup_gui
     from gensprite_mcp.installer import InstallResult
@@ -43,11 +44,11 @@ def test_project_picker_constructs_and_connects_without_blocking_ui(tmp_path, mo
     project.mkdir()
     try:
 
-        def connected(*args, progress=None):
+        def connected(*args, progress=None, client="codex"):
             progress("Checking the MCP connection...")
             return InstallResult(
                 tmp_path / "server.exe",
-                project / ".codex/config.toml",
+                project / (".codex/config.toml" if client == "codex" else "opencode.json"),
                 project / ".gensprite",
                 None,
                 63,
@@ -61,9 +62,10 @@ def test_project_picker_constructs_and_connects_without_blocking_ui(tmp_path, mo
             tmp_path / "install",
         )
         root.update_idletasks()
-        assert root.winfo_reqheight() <= 440
+        assert root.winfo_reqheight() <= 500
         assert str(app.connect_button["state"]) == "disabled"
         app.project.set(str(project))
+        app.client.set(client)
         app.connect()
         import time
 
@@ -74,6 +76,9 @@ def test_project_picker_constructs_and_connects_without_blocking_ui(tmp_path, mo
         assert not app.busy
         assert app.last_result.tool_count == 63
         assert "Connected" in app.status.get()
-        assert "Reopen Codex" in app.details.get()
+        assert f"Reopen {client}" in app.details.get()
+        assert app.last_result.config_path.name == (
+            "config.toml" if client == "Codex" else "opencode.json"
+        )
     finally:
         root.destroy()

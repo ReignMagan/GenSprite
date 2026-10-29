@@ -91,21 +91,29 @@ class AssetStore:
         asset_type: str = "character",
         parent_asset_id: str | None = None,
         metadata: dict | None = None,
+        source_png: bytes | None = None,
     ) -> dict[str, Any]:
         canvas = Canvas(width=image.width, height=image.height)
         image = image.convert("RGBA")
-        pixels = image.get_flattened_data()
-        alpha = {pixel[3] for pixel in pixels}
+        colors_and_counts = image.getcolors(maxcolors=image.width * image.height)
+        alpha = {pixel[3] for _, pixel in colors_and_counts}
         if not alpha <= {0, 255}:
             raise ValueError("Nonbinary alpha; explicitly refine with an alpha cutoff")
-        colors = sorted({f"#{r:02X}{g:02X}{b:02X}" for r, g, b, a in pixels if a})
+        colors = sorted({
+            f"#{r:02X}{g:02X}{b:02X}" for _, (r, g, b, a) in colors_and_counts if a
+        })
         if not colors:
             raise ValueError("Image must contain visible pixels")
         if palette is not None and set(colors) - {color.upper() for color in palette}:
             raise ValueError("Image uses colors outside the locked palette")
         if parent_asset_id and self.validate_sprite(parent_asset_id)["errors"]:
             raise ValueError("Parent source validation failed")
-        details = metadata or {}
+        details = dict(metadata or {})
+        if source_png is not None:
+            if not isinstance(source_png, bytes) or len(source_png) > 4 * 1024 * 1024:
+                raise ValueError("Original PNG must be bytes no larger than 4 MiB")
+            details["original_sha256"] = hashlib.sha256(source_png).hexdigest()
+            details.pop("original_asset_id", None)
         if len(json.dumps(details).encode("utf-8")) > 16384:
             raise ValueError("Asset metadata exceeds 16 KiB")
         encoded = io.BytesIO()
@@ -134,6 +142,10 @@ class AssetStore:
         png_path.parent.mkdir(parents=True, exist_ok=False)
         with png_path.open("xb") as output:
             output.write(encoded.getvalue())
+        if source_png is not None:
+            source_path = self._path("generated", asset_id, "source.png")
+            with source_path.open("xb") as output:
+                output.write(source_png)
         self._write_new(manifest_path, manifest)
         report = self.validate_sprite(asset_id)
         if report["errors"]:
@@ -252,7 +264,11 @@ class AssetStore:
         try:
             if path.stat().st_size > 4 * 1024 * 1024:
                 return info, ["PNG exceeds the 4 MiB file limit"]
-            with Image.open(path) as image:
+            with path.open("rb") as source:
+                raw = source.read(4 * 1024 * 1024 + 1)
+            if len(raw) > 4 * 1024 * 1024:
+                return info, ["PNG exceeds the 4 MiB file limit"]
+            with Image.open(io.BytesIO(raw)) as image:
                 info.update(
                     format=image.format, mode=image.mode, width=image.width, height=image.height
                 )
@@ -264,9 +280,9 @@ class AssetStore:
                     errors.append("Image dimensions do not match the manifest canvas")
                 if image.width > 256 or image.height > 256:
                     return info, errors + ["Image dimensions exceed the 256-pixel limit"]
-                pixels = image.convert("RGBA").get_flattened_data()
-                alpha = {pixel[3] for pixel in pixels}
-                colors = sorted({f"#{r:02X}{g:02X}{b:02X}" for r, g, b, a in pixels if a})
+                unique = image.convert("RGBA").getcolors(maxcolors=image.width * image.height)
+                alpha = {pixel[3] for _, pixel in unique}
+                colors = sorted({f"#{r:02X}{g:02X}{b:02X}" for _, (r, g, b, a) in unique if a})
                 info.update(colors=colors, alpha_values=sorted(alpha))
                 if not alpha <= {0, 255}:
                     errors.append("Image has nonbinary alpha; remove semitransparent pixels")
@@ -276,7 +292,7 @@ class AssetStore:
                     errors.append("Image must contain visible pixels")
                 if set(colors) - set(manifest.palette):
                     errors.append("Image uses colors outside the locked palette")
-            if hashlib.sha256(path.read_bytes()).hexdigest() != manifest.source_sha256:
+            if hashlib.sha256(raw).hexdigest() != manifest.source_sha256:
                 errors.append(
                     "PNG source digest changed; preserve the original and create a revision"
                 )

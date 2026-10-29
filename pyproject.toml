@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "gensprite-mcp"
-version = "1.2.0"
+version = "1.3.0"
 description = "Agent-authored sprite production, animation, refinement and exports over MCP"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -38,4 +38,8 @@ select = ["E", "F", "I"]
 packages = ["src/gensprite_mcp"]
 
 [tool.hatch.build.targets.sdist]
-include = ["/src", "/README.md", "/pyproject.toml", "/uv.lock", "/docs/deployment.md", "/docs/compatibility.md"]
+include = [
+    "/src", "/README.md", "/pyproject.toml", "/uv.lock",
+    "/docs/deployment.md", "/docs/compatibility.md", "/docs/performance.md",
+    "/opencode.json", "/examples/opencode-config.json", "/scripts/benchmark_processing.py",
+]
